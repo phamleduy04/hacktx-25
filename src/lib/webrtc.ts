@@ -140,12 +140,12 @@ export class WebRTCManager {
 
     this.peerConnection.onicecandidate = (event) => {
       if (event.candidate) {
-        console.log('ICE candidate generated:', event.candidate);
-        // Send ICE candidate through Convex
-        addIceCandidateMutation({
-          candidate: JSON.stringify(event.candidate),
-          roomId: this.roomId
-        }).catch(console.error);
+          console.log('ICE candidate generated:', event.candidate);
+          // Send ICE candidate through Convex
+          addIceCandidateMutation({
+            candidate: JSON.stringify(event.candidate),
+            roomId: this.roomId
+          }).catch(console.error);
       }
     };
 
