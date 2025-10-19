@@ -1,23 +1,18 @@
-import path from 'node:path';
-import tailwindcss from '@tailwindcss/vite';
-import react from '@vitejs/plugin-react';
-import { defineConfig } from 'vite';
-import Pages from 'vite-plugin-pages';
+import { defineConfig } from "vite";
+import react from "@vitejs/plugin-react-swc";
+import path from "path";
+import { componentTagger } from "lovable-tagger";
 
-// https://vite.dev/config/
-export default defineConfig({
-  plugins: [
-    react(),
-    tailwindcss(),
-    Pages({
-      dirs: 'src/pages',
-    }),
-  ],
+// https://vitejs.dev/config/
+export default defineConfig(({ mode }) => ({
+  server: {
+    host: "::",
+    port: 8080,
+  },
+  plugins: [react(), mode === "development" && componentTagger()].filter(Boolean),
   resolve: {
     alias: {
-      '@': path.resolve(__dirname, './src'),
-      '@shadcn': path.resolve(__dirname, './src/components/ui'),
-      '@convex': path.resolve(__dirname, './convex/_generated'),
+      "@": path.resolve(__dirname, "./src"),
     },
   },
-});
+}));
