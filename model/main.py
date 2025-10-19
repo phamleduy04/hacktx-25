@@ -8,6 +8,9 @@ dotenv.load_dotenv("../.env.local")
 
 CONVEX_URL = os.getenv("VITE_CONVEX_URL")
 
+if not CONVEX_URL:
+    raise Exception("Need to have VITE_CONVEX_URL environment variable set to continue.")
+
 client = ConvexClient(CONVEX_URL)
 
 # Global variables for model and preprocessor
