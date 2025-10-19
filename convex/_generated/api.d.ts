@@ -8,6 +8,8 @@
  * @module
  */
 
+import type * as f1 from "../f1.js";
+import type * as f1Strategy from "../f1Strategy.js";
 import type * as webrtc from "../webrtc.js";
 
 import type {
@@ -25,6 +27,8 @@ import type {
  * ```
  */
 declare const fullApi: ApiFromModules<{
+  f1: typeof f1;
+  f1Strategy: typeof f1Strategy;
   webrtc: typeof webrtc;
 }>;
 declare const fullApiWithMounts: typeof fullApi;

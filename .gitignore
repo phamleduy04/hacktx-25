@@ -22,3 +22,10 @@ dist-ssr
 *.njsproj
 *.sln
 *.sw?
+
+.venv
+__pycache__
+
+# FastF1 cache and model outputs
+model/cache/
+model/output/*.joblib
