@@ -20,4 +20,10 @@ export default defineSchema({
     race_incident: v.union(v.literal('None'), v.literal('Yellow Flag'), v.literal('Safety Car'), v.literal('VSC')),
     laps_since_pit: v.number(),
   }),
+  webrtc_signaling: defineTable({
+    type: v.union(v.literal("offer"), v.literal("answer"), v.literal("ice-candidate")),
+    sdp: v.string(),
+    roomId: v.string(),
+    timestamp: v.number(),
+  }).index("by_room", ["roomId"]),
 });

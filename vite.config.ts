@@ -13,6 +13,16 @@ export default defineConfig({
       dirs: 'src/pages',
     }),
   ],
+  server: {
+    host: true, // Allow external connections
+    allowedHosts: [
+      'localhost',
+      '127.0.0.1',
+      '.ngrok.io',
+      '.ngrok-free.app',
+      '.ngrok.app'
+    ],
+  },
   resolve: {
     alias: {
       '@': path.resolve(__dirname, './src'),

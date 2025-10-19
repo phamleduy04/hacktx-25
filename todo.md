@@ -1,0 +1,7 @@
+- [ ] fix synthetic telemetry data (tire decay faster, use F1_Pit_call_Decision_Model.ipynb and test_model.py for example synthetic data format and realistic values)
+- [ ] add passing on straights
+- [ ] slow down on curves
+- [ ] remove speed up above 100% speed
+- [ ] slow down from tire wear
+- [ ] add race incidents (everyone maintains position?)
+- [ ] maybe add more gap time updates (5 per lap)
