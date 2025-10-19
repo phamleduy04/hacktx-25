@@ -103,7 +103,8 @@ def validate_input(data: Dict[str, Any]) -> tuple[bool, str]:
         'tire_wear_percentage',
         'performance_drop_seconds',
         'track_position',
-        'race_incident'
+        'race_incident',
+        'laps_since_pit'
     ]
     
     # Check if all required fields are present
@@ -144,6 +145,14 @@ def validate_input(data: Dict[str, Any]) -> tuple[bool, str]:
     if data['race_incident'] not in valid_incidents:
         return False, f"race_incident must be one of: {', '.join(valid_incidents)}"
     
+    # Validate laps_since_pit (positive integer)
+    try:
+        laps = int(data['laps_since_pit'])
+        if laps < 0:
+            return False, "laps_since_pit must be non-negative"
+    except (ValueError, TypeError):
+        return False, "laps_since_pit must be an integer"
+    
     return True, ""
 
 
@@ -168,7 +177,8 @@ def predict():
         "tire_wear_percentage": 0-100,
         "performance_drop_seconds": float,
         "track_position": 1-20,
-        "race_incident": "None" | "Yellow Flag" | "Safety Car" | "VSC"
+        "race_incident": "None" | "Yellow Flag" | "Safety Car" | "VSC",
+        "laps_since_pit": int (0+)
     }
     
     Returns:
@@ -205,7 +215,8 @@ def predict():
             'tire_wear_percentage': [float(data['tire_wear_percentage'])],
             'performance_drop_seconds': [float(data['performance_drop_seconds'])],
             'track_position': [int(data['track_position'])],
-            'race_incident': [data['race_incident']]
+            'race_incident': [data['race_incident']],
+            'laps_since_pit': [int(data['laps_since_pit'])]
         })
         
         # Preprocess and predict
@@ -252,7 +263,8 @@ def model_info():
                 'tire_wear_percentage',
                 'performance_drop_seconds',
                 'track_position',
-                'race_incident'
+                'race_incident',
+                'laps_since_pit'
             ],
             'possible_decisions': ['PIT NOW', 'STAY OUT'],
             'race_incident_options': ['None', 'Yellow Flag', 'Safety Car', 'VSC'],

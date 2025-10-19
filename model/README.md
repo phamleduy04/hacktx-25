@@ -2,12 +2,16 @@
 
 Machine learning model for predicting optimal F1 pit stop decisions based on race conditions.
 
+**NEW:** The model now uses real F1 data from the [FastF1 package](https://docs.fastf1.dev/) to train on actual race scenarios! It automatically falls back to synthetic data if real data is unavailable.
+
 ## Setup
 
 Install dependencies:
 ```bash
 pip install -r requirements.txt
 ```
+
+Note: The training script will download real F1 telemetry and timing data from recent races. This requires an internet connection and may take a few minutes on the first run (data is cached for subsequent runs).
 
 ## Training the Model
 
@@ -17,21 +21,30 @@ python train.py
 ```
 
 This will:
-- Generate 2,000 synthetic F1 racing scenarios
-- Train a Decision Tree classifier
+- **Fetch real F1 data** from 2023-2024 seasons (lap times, tire stints, positions, track status)
+- Calculate performance metrics from actual race telemetry
+- Train a Decision Tree classifier on real racing scenarios
 - Display evaluation metrics (accuracy, classification report, confusion matrix)
 - Save the trained model to `output/f1_pit_strategy_model.joblib`
 - Save the preprocessor to `output/preprocessor.joblib`
 - Create a timestamped backup in the `output/` directory
 
+**Data Sources:**
+- Real lap-by-lap data from FastF1 (when available)
+- Actual tire stint information
+- Real track incidents (Safety Car, VSC, Yellow Flags)
+- Calculated performance drops from race telemetry
+- Falls back to synthetic data if FastF1 is unavailable or internet connection fails
+
 ## Model Inputs
 
 The model considers the following features:
-- `undercut_overcut_opportunity`: Binary indicator (0 or 1)
+- `undercut_overcut_opportunity`: Binary indicator (0 or 1) - strategic pit window
 - `tire_wear_percentage`: Tire degradation level (5-98%)
 - `performance_drop_seconds`: Lap time loss due to tire wear
 - `track_position`: Current race position (1-20)
 - `race_incident`: Track conditions (None, Yellow Flag, Safety Car, VSC)
+- `laps_since_pit`: **NEW!** Number of laps since last pit stop (1-50)
 
 ## Model Output
 
@@ -87,7 +100,8 @@ curl -X POST http://localhost:3000/predict \
     "tire_wear_percentage": 65,
     "performance_drop_seconds": 2.1,
     "track_position": 5,
-    "race_incident": "None"
+    "race_incident": "None",
+    "laps_since_pit": 23
   }'
 ```
 
