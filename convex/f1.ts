@@ -35,3 +35,29 @@ export const listF1CarData = query({
         return await ctx.db.query("f1_car_data").collect();
     },
 });
+
+export const listCarByCarId = query({
+    args: {
+        car_id: v.string(),
+    },
+    returns: v.union(v.null(), v.object({
+        _id: v.id("f1_car_data"),
+        _creationTime: v.number(),
+        car_id: v.string(),
+        undercut_overcut_opportunity: v.boolean(),
+        tire_wear_percentage: v.number(),
+        performance_drop_seconds: v.number(),
+        track_position: v.number(),
+        race_incident: v.union(v.literal('None'), v.literal('Yellow Flag'), v.literal('Safety Car'), v.literal('VSC')),
+        laps_since_pit: v.number(),
+    })),
+    handler: async (ctx, args) => {
+        console.log("listCarByCarId", args.car_id);
+        const result = await ctx.db.query("f1_car_data")
+            .withIndex("by_car_id", (q) => q.eq("car_id", args.car_id))
+            .order("desc")
+            .first();
+        console.log("result", result);
+        return result;
+    },
+});

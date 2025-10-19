@@ -19,7 +19,7 @@ export default defineSchema({
     track_position: v.number(),
     race_incident: v.union(v.literal('None'), v.literal('Yellow Flag'), v.literal('Safety Car'), v.literal('VSC')),
     laps_since_pit: v.number(),
-  }),
+  }).index("by_car_id", ["car_id"]),
   webrtc_signaling: defineTable({
     type: v.union(v.literal("offer"), v.literal("answer"), v.literal("ice-candidate")),
     sdp: v.string(),

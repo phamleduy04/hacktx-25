@@ -13,6 +13,12 @@ import { Switch } from './ui/switch';
 import { api } from '../../convex/_generated/api';
 import { useMutation, useQuery } from 'convex/react';
 
+import { ElevenLabsClient } from "@elevenlabs/elevenlabs-js";
+import { useConversation } from "@elevenlabs/react";
+
+const elevenlabs = new ElevenLabsClient({
+    apiKey: import.meta.env.VITE_ELEVENLABS_API_KEY, // Defaults to process.env.ELEVENLABS_API_KEY
+});
 // Driver configuration
 interface Driver {
     id: number;
@@ -82,7 +88,6 @@ function Scene({ trackData, carScale, carSpeed, followCar, setCarPosition, showT
     carTelemetry: Record<number, CarTelemetry>;
 }) {
 
-    
     const controlsRef = useRef<any>(null); // eslint-disable-line @typescript-eslint/no-explicit-any
     const carRefs = useRef<(THREE.Group | null)[]>([null, null, null, null, null, null, null, null]);
     const [carWorldPositions, setCarWorldPositions] = useState<{ position: THREE.Vector3; rotation: THREE.Quaternion }[]>([
@@ -287,7 +292,55 @@ function Scene({ trackData, carScale, carSpeed, followCar, setCarPosition, showT
 export default function F1RaceSimulation({ className = '' }: F1RaceSimulationProps) {
     const addF1CarData = useMutation(api.f1.addF1CarData);
     const decisionQuery = useQuery(api.f1Strategy.listF1PitStrategy);
+    const listCarByCarId = useQuery(api.f1.listCarByCarId, { car_id: "0" });
+    const conversation = useConversation({
+        onConnect: () => console.log('Connected'),
+        onDisconnect: () => console.log('Disconnected'),
+        onMessage: (message) => console.log('Message:', message),
+        onError: (error) => console.error('Error:', error),
+    });
+    console.log(conversation.status);
+    console.log("speaking", conversation.isSpeaking);
+
+    const startConversation = useCallback(async () => {
+    try {
+        // Request microphone permission
+        await navigator.mediaDevices.getUserMedia({ audio: true });
+        // Start the conversation with your agent
+        await conversation.startSession({
+            agentId: 'agent_2601k7ye7fg2fn3vrfpj7g06vv0f', // Replace with your agent ID
+            connectionType: 'websocket', // either "webrtc" or "websocket"
+            clientTools: {
+                checkCarStatus: () => {
+                    console.log("checkCarStatus");
+
+                    // Check if car data is available (null, undefined, or still loading)
+                    if (!listCarByCarId) {
+                        return 'Car status data is not available yet. The race might not have started or no telemetry data has been recorded for car 0.';
+                    }
+                    
+                    const data = listCarByCarId;
+                    
+                    // Format the response in a human-readable way for the agent
+                    const statusReport = `Car 0 Status Report:
+                    - Tire wear: ${data.tire_wear_percentage.toFixed(1)}%
+                    - Performance drop: ${data.performance_drop_seconds.toFixed(2)} seconds
+                    - Track position: ${(data.track_position * 100).toFixed(1)}% through the lap
+                    - Laps since last pit stop: ${data.laps_since_pit}
+                    - Current race incident: ${data.race_incident}
+                    - Undercut/Overcut opportunity: ${data.undercut_overcut_opportunity ? 'Yes' : 'No'}`;
+                    
+                    console.log("statusReport", statusReport);
+                    return statusReport;
+                }
+            }
+        });
+    } catch (error) {
+        console.error('Failed to start conversation:', error);
+    }
+    }, [conversation, listCarByCarId]);
     
+    const [currentBox, setCurrentBox] = useState<boolean>(false);
     const [trackData, setTrackData] = useState<TrackData | null>(null);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
@@ -556,6 +609,7 @@ export default function F1RaceSimulation({ className = '' }: F1RaceSimulationPro
             // Stopping race
             setIsRaceStarted(false);
             setRaceStartTime(null);
+            setCurrentBox(false); // Reset audio flag when race stops
         }
     }, [isRaceStarted, carSpeed]);
 
@@ -759,6 +813,42 @@ export default function F1RaceSimulation({ className = '' }: F1RaceSimulationPro
         sendTelemetry();
     }, [isRaceStarted, trackData, carRaceData, carTelemetry, addF1CarData]);
 
+    const triggerPitStop = useCallback(async () => {
+        const audioStream = await elevenlabs.textToSpeech.convert("G7ILShrCNLfmS0A37SXS", {
+            text: "Box Box Box",
+            modelId: "eleven_flash_v2_5",
+        });
+        // Manually convert ReadableStream to audio and play in browser
+        const reader = audioStream.getReader();
+        const chunks: Uint8Array[] = [];
+        
+        // Read all chunks from the stream
+        while (true) {
+            const { done, value } = await reader.read();
+            if (done) break;
+            if (value) chunks.push(value);
+        }
+        
+        // Create blob from chunks and play
+        const audioBlob = new Blob(chunks as unknown as BlobPart[], { type: 'audio/mpeg' });
+        const audioUrl = URL.createObjectURL(audioBlob);
+        const audio = new Audio(audioUrl);
+        
+        // Play and cleanup
+        audio.play();
+        audio.onended = () => URL.revokeObjectURL(audioUrl);
+    }, []);
+
+    // Reset audio flag when decision is no longer "PIT NOW"
+    useEffect(() => {
+        if (!decisionQuery) return;
+        
+        const car0Decision = decisionQuery.find(decision => decision.car_id === "0");
+        if (car0Decision && car0Decision.decision !== "PIT NOW" && currentBox) {
+            setCurrentBox(false);
+        }
+    }, [decisionQuery, currentBox]);
+
     // Watch decisionQuery for car 0 and auto-trigger pit stops
     useEffect(() => {
         if (!decisionQuery) return;
@@ -766,14 +856,17 @@ export default function F1RaceSimulation({ className = '' }: F1RaceSimulationPro
         // Find decision for car 0
         const car0Decision = decisionQuery.find(decision => decision.car_id === "0");
         
-        if (car0Decision && car0Decision.decision === "PIT NOW") {
+        if (car0Decision && car0Decision.decision === "PIT NOW" && !currentBox) {
             console.log("Car 0 received PIT NOW decision from Convex");
+
+            triggerPitStop().then(() => setCurrentBox(true));
+            
             setPitStopToggles(prev => ({
                 ...prev,
                 [0]: true
             }));
         }
-    }, [decisionQuery]);
+    }, [decisionQuery, triggerPitStop, currentBox]);
 
     // AI car pit stop logic - monitor AI cars and trigger pit stops at assigned laps or based on tire wear/performance
     useEffect(() => {
@@ -887,6 +980,10 @@ export default function F1RaceSimulation({ className = '' }: F1RaceSimulationPro
                         >
                             {isRaceStarted ? "🛑 Stop Race" : "🏁 Start Race"}
                         </Button>
+                        <Button
+                            onClick={startConversation}
+                        >
+                            Radio Call</Button>
                         <div className="text-xs text-gray-600">
                             {isRaceStarted ? "Race in progress" : "Cars waiting at start line"}
                         </div>
