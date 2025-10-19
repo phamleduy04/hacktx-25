@@ -984,7 +984,7 @@ export default function F1RaceSimulation({ className = '' }: F1RaceSimulationPro
                                     <div className="text-xs text-gray-600 mb-2">
                                         Trails are now color-coded by team:
                                     </div>
-                                    <div className="flex gap-2">
+                                    <div className="flex gap-2 flex-wrap max-w-48">
                                         {DRIVERS.map((driver, index) => (
                                             <div key={driver.id} className="flex flex-col items-center">
                                                 <div
