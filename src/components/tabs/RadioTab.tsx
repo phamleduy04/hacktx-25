@@ -1,12 +1,7 @@
+import * as React from "react";
 import { useRef, useState } from "react";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Button } from "@/components/ui/button";
-import { Textarea } from "@/components/ui/textarea";
-import { Badge } from "@/components/ui/badge";
-import { Mic, Send, CheckCircle } from "lucide-react";
-import { toast } from "@/hooks/use-toast";
 
-/** simple rule-based mapper so the right panel populates without AI */
+/** keyword rules */
 function extractKeywords(text: string) {
   const t = text.toLowerCase();
   const kws: string[] = [];
@@ -20,24 +15,18 @@ function extractKeywords(text: string) {
 }
 
 function buildSuggestion(kws: string[]) {
-  if (kws.includes("rear grip") || kws.includes("traction loss")) {
-    return "Consider +2% rear brake bias and check RR/RL pressures; advise smoother throttle exit T8.";
-  }
-  if (kws.includes("possible smoke")) {
-    return "Monitor oil temp/ERS temps; prepare box call if temps continue +5°C next lap.";
-  }
-  if (kws.includes("vibration")) {
-    return "Check tire flat-spot telemetry and wheel speed variance; consider reduced brake pressure into high-load turns.";
-  }
-  if (kws.includes("brake lockup")) {
-    return "Reduce brake bias front by 1–2%, earlier release into apex.";
-  }
-  if (kws.includes("oversteer")) {
-    return "Stabilize rear: add wing click later; for now, traction map +1.";
-  }
-  if (kws.includes("understeer")) {
-    return "Front slip: brake bias forward −1%, suggest later turn-in and slower mid-corner.";
-  }
+  if (kws.includes("rear grip") || kws.includes("traction loss"))
+    return "Consider +2% rear brake bias and check RR/RL pressures; smoother throttle exit T8.";
+  if (kws.includes("possible smoke"))
+    return "Monitor oil/ERS temps; prepare box if temps rise +5°C next lap.";
+  if (kws.includes("vibration"))
+    return "Check flat-spot / wheel speed variance; reduce brake pressure in high-load turns.";
+  if (kws.includes("brake lockup"))
+    return "Reduce front brake bias 1–2%; earlier release to apex.";
+  if (kws.includes("oversteer"))
+    return "Stabilize rear: traction map +1; wing click later.";
+  if (kws.includes("understeer"))
+    return "Front slip: bias forward −1%; later turn-in, slower mid-corner.";
   return "Logged. Monitoring deltas for the next lap.";
 }
 
@@ -47,52 +36,37 @@ const RadioTab = () => {
   const [keywords, setKeywords] = useState<string[]>([]);
   const [suggestion, setSuggestion] = useState("");
   const [latMs, setLatMs] = useState<number | null>(null);
+  const [error, setError] = useState<string | null>(null);
 
   const recRef = useRef<MediaRecorder | null>(null);
-  const streamRef = useRef<MediaStream | null>(null);
   const chunksRef = useRef<Blob[]>([]);
   const t0Ref = useRef<number>(0);
 
+  /** mic -> stt */
   const startRecording = async () => {
+    setError(null);
     try {
-      // mic
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-      streamRef.current = stream;
-
-      // codec fallback
-      const mime = MediaRecorder.isTypeSupported("audio/webm;codecs=opus")
-        ? "audio/webm;codecs=opus"
-        : MediaRecorder.isTypeSupported("audio/mp4")
-        ? "audio/mp4"
-        : "audio/webm";
-
+      const mime =
+        MediaRecorder.isTypeSupported("audio/webm;codecs=opus")
+          ? "audio/webm;codecs=opus"
+          : "audio/webm";
       chunksRef.current = [];
       const rec = new MediaRecorder(stream, { mimeType: mime, audioBitsPerSecond: 64000 });
       recRef.current = rec;
-
-      rec.ondataavailable = (e) => {
-        if (e.data && e.data.size) chunksRef.current.push(e.data);
-      };
-
+      rec.ondataavailable = (e) => e.data?.size && chunksRef.current.push(e.data);
       rec.onstop = async () => {
         const blob = new Blob(chunksRef.current, { type: mime });
         await sendToSTT(blob);
-        // cleanup
         stream.getTracks().forEach((t) => t.stop());
         setIsRecording(false);
       };
-
-      // go
       t0Ref.current = performance.now();
       rec.start();
       setIsRecording(true);
-      toast({ title: "Recording started" });
-
-      // auto stop ~2.5s
       setTimeout(() => rec.state === "recording" && rec.stop(), 2500);
-    } catch (e) {
-      console.error(e);
-      toast({ title: "Microphone error", description: "Permission denied or unavailable." });
+    } catch {
+      setError("Mic permission denied or unavailable.");
       setIsRecording(false);
     }
   };
@@ -102,178 +76,118 @@ const RadioTab = () => {
     form.append("file", blob, "clip.webm");
     try {
       const r = await fetch("/api/stt", { method: "POST", body: form });
-      const data = await r.json();
+      const text = await r.text();
       setLatMs(Math.round(performance.now() - t0Ref.current));
 
-      if (!r.ok || !data?.text) {
-        toast({ title: "STT failed", description: data?.error ?? "No transcript returned." });
+      if (!r.ok) {
+        console.error("STT error", r.status, text);
+        setError(`STT failed (${r.status})`);
         return;
       }
+      const data = JSON.parse(text);
+      if (!data?.text) return setError("No transcript returned.");
 
       setTranscript(data.text);
       const kws = extractKeywords(data.text);
       setKeywords(kws);
       setSuggestion(buildSuggestion(kws));
-      toast({ title: "Transcribed", description: data.text });
-    } catch (e) {
-      console.error(e);
-      toast({ title: "STT error", description: "Service unavailable." });
+    } catch {
+      setError("Service unavailable.");
     }
   };
 
   const handleRecord = () => {
-    if (isRecording) {
-      // manual stop
-      recRef.current?.state === "recording" && recRef.current.stop();
-      return;
-    }
-    startRecording();
-  };
-
-  const handleSend = () => {
-    if (!transcript) return;
-    toast({ title: "Radio logged", description: "Message sent to logs/correlation." });
-    // TODO: optionally POST to your Convex action/logs here.
-  };
-
-  // deterministic test without mic (optional)
-  const sendSample = async () => {
-    try {
-      const res = await fetch("/sample.webm");
-      const blob = await res.blob();
-      t0Ref.current = performance.now();
-      await sendToSTT(blob);
-    } catch {
-      toast({ title: "Missing sample", description: "Put /public/sample.webm to use this." });
-    }
+    if (isRecording) recRef.current?.state === "recording" && recRef.current.stop();
+    else startRecording();
   };
 
   return (
     <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-      {/* Left - Radio Console */}
+      {/* Left side */}
       <div className="space-y-4">
-        <Card id="radio" className="border-border bg-card shadow-lg">
-          <CardHeader className="pb-3 flex items-center justify-between">
-            <CardTitle className="text-sm font-semibold tracking-wide text-muted-foreground">
-              Radio Console
-            </CardTitle>
+        <div className="border border-zinc-800 bg-zinc-900 rounded-lg p-4 shadow">
+          <div className="flex items-center justify-between mb-3">
+            <h2 className="text-sm font-semibold tracking-wide text-zinc-300">Radio Console</h2>
             {latMs !== null && (
-              <span className="text-[11px] px-2 py-1 rounded bg-muted text-foreground/80">
+              <span className="text-[11px] px-2 py-1 rounded bg-zinc-800 text-zinc-300">
                 latency {latMs} ms
               </span>
             )}
-          </CardHeader>
-          <CardContent className="space-y-4">
-            <div className="flex gap-2">
-              <Button
-                onClick={handleRecord}
-                className={`flex-1 ${
-                  isRecording ? "bg-danger hover:bg-danger/90 animate-pulse" : "bg-primary hover:bg-primary/90"
-                } text-primary-foreground`}
-              >
-                <Mic className="w-4 h-4 mr-2" />
-                {isRecording ? "Recording..." : "Push to Talk"}
-              </Button>
-              <Button variant="outline" onClick={sendSample}>
-                ▶︎ Sample
-              </Button>
+          </div>
+
+          {error && (
+            <div className="mb-3 text-sm bg-red-900/40 border border-red-600 px-3 py-2 rounded">
+              {error}
             </div>
+          )}
 
-            <Textarea
-              value={transcript}
-              onChange={(e) => setTranscript(e.target.value)}
-              placeholder="Transcribed text will appear here..."
-              className="min-h-[120px] bg-secondary border-border font-mono text-sm"
-              readOnly={isRecording}
-            />
+          <button
+            onClick={handleRecord}
+            className={`w-full px-4 py-2 rounded ${
+              isRecording ? "bg-red-600 animate-pulse" : "bg-sky-500 hover:bg-sky-600"
+            }`}
+          >
+            {isRecording ? "Recording..." : "🎙️ Push to Talk"}
+          </button>
 
-            <Button
-              onClick={handleSend}
-              disabled={!transcript}
-              className="w-full bg-primary hover:bg-primary/90 text-primary-foreground"
-            >
-              <Send className="w-4 h-4 mr-2" />
-              Send to Agent
-            </Button>
-          </CardContent>
-        </Card>
+          <textarea
+            value={transcript}
+            placeholder="Transcribed text will appear here..."
+            className="w-full mt-3 p-3 bg-zinc-800 text-zinc-200 rounded border border-zinc-700 font-mono text-sm min-h-[120px]"
+            readOnly
+          />
+        </div>
       </div>
 
-      {/* Right - Correlation & Suggestion */}
+      {/* Right side */}
       <div className="space-y-4">
-        <Card id="correlate" className="border-border bg-card shadow-lg">
-          <CardHeader className="pb-3">
-            <CardTitle className="text-sm font-semibold tracking-wide text-muted-foreground">
-              Detected Keywords
-            </CardTitle>
-          </CardHeader>
-          <CardContent>
-            {keywords.length > 0 ? (
-              <div className="flex flex-wrap gap-2">
-                {keywords.map((kw) => (
-                  <Badge key={kw} variant="outline" className="bg-secondary border-primary/30">
-                    {kw}
-                  </Badge>
-                ))}
+        {/* Keywords */}
+        <div className="border border-zinc-800 bg-zinc-900 rounded-lg p-4 shadow">
+          <div className="mb-2 text-sm font-semibold tracking-wide text-zinc-300">Detected Keywords</div>
+          {keywords.length > 0 ? (
+            <div className="flex flex-wrap gap-2">
+              {keywords.map((kw) => (
+                <span key={kw} className="px-2 py-1 bg-zinc-800 border border-sky-600/30 rounded text-xs">
+                  {kw}
+                </span>
+              ))}
+            </div>
+          ) : (
+            <p className="text-sm text-zinc-500">No keywords detected yet</p>
+          )}
+        </div>
+
+        {/* Linked Metrics */}
+        <div className="border border-zinc-800 bg-zinc-900 rounded-lg p-4 shadow">
+          <div className="mb-2 text-sm font-semibold tracking-wide text-zinc-300">Linked Metrics</div>
+          {keywords.length > 0 ? (
+            <div className="space-y-3">
+              <div className="flex items-center justify-between p-3 bg-zinc-800 rounded border border-zinc-700">
+                <div className="text-sm text-zinc-200">tire_rr_temp_c</div>
+                <div className="flex items-center gap-2">
+                  <span className="text-red-400 font-mono text-sm">+8°C</span>
+                  <span className="border px-1.5 py-0.5 rounded text-xs border-zinc-600">78%</span>
+                </div>
               </div>
-            ) : (
-              <p className="text-sm text-muted-foreground">No keywords detected yet</p>
-            )}
-          </CardContent>
-        </Card>
-
-        <Card className="border-border bg-card shadow-lg">
-          <CardHeader className="pb-3">
-            <CardTitle className="text-sm font-semibold tracking-wide text-muted-foreground">
-              Linked Metrics
-            </CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-3">
-            {keywords.length > 0 ? (
-              <>
-                <div className="flex items-center justify-between p-3 bg-secondary rounded-lg border border-border">
-                  <div className="text-sm text-foreground">tire_rr_temp_c</div>
-                  <div className="flex items-center gap-2">
-                    <span className="text-danger font-mono text-sm">+8°C</span>
-                    <Badge variant="outline" className="text-xs">
-                      78%
-                    </Badge>
-                  </div>
+              <div className="flex items-center justify-between p-3 bg-zinc-800 rounded border border-zinc-700">
+                <div className="text-sm text-zinc-200">ers_deploy_rate</div>
+                <div className="flex items-center gap-2">
+                  <span className="text-amber-300 font-mono text-sm">+6%</span>
+                  <span className="border px-1.5 py-0.5 rounded text-xs border-zinc-600">62%</span>
                 </div>
-                <div className="flex items-center justify-between p-3 bg-secondary rounded-lg border border-border">
-                  <div className="text-sm text-foreground">ers_deploy_rate</div>
-                  <div className="flex items-center gap-2">
-                    <span className="text-warning font-mono text-sm">+6%</span>
-                    <Badge variant="outline" className="text-xs">
-                      62%
-                    </Badge>
-                  </div>
-                </div>
-              </>
-            ) : (
-              <p className="text-sm text-muted-foreground">No linked metrics</p>
-            )}
-          </CardContent>
-        </Card>
+              </div>
+            </div>
+          ) : (
+            <p className="text-sm text-zinc-500">No linked metrics</p>
+          )}
+        </div>
 
+        {/* Suggestion */}
         {suggestion && (
-          <Card className="border-success/30 bg-card shadow-lg shadow-success/10">
-            <CardHeader className="pb-3">
-              <CardTitle className="text-sm font-semibold tracking-wide text-success flex items-center gap-2">
-                <CheckCircle className="w-4 h-4" />
-                Suggestion
-              </CardTitle>
-            </CardHeader>
-            <CardContent className="space-y-3">
-              <p className="text-sm text-foreground leading-relaxed">{suggestion}</p>
-              <Button
-                className="w-full bg-success hover:bg-success/90 text-card"
-                onClick={() => toast({ title: "Suggestion accepted" })}
-              >
-                Accept
-              </Button>
-            </CardContent>
-          </Card>
+          <div className="border border-emerald-600/30 bg-zinc-900 rounded-lg p-4 shadow">
+            <div className="mb-2 text-sm font-semibold tracking-wide text-emerald-400">Suggestion</div>
+            <p className="text-sm text-zinc-200">{suggestion}</p>
+          </div>
         )}
       </div>
     </div>

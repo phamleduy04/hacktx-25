@@ -1,4 +1,5 @@
 // src/components/QuickSTT.tsx
+import * as React from "react";
 import { useRef, useState } from "react";
 
 export default function QuickSTT() {
@@ -35,7 +36,7 @@ export default function QuickSTT() {
     try {
       const res = await fetch("https://api.elevenlabs.io/v1/speech-to-text", {
         method: "POST",
-        headers: { "xi-api-key": import.meta.env.VITE_ELEVENLABS_API_KEY },
+        headers: { "xi-api-key": process.env.VITE_ELEVENLABS_API_KEY || "" },
         body: form,
       });
       const data = await res.json();
@@ -52,23 +53,24 @@ export default function QuickSTT() {
     }
   };
 
-  return (
-    <div className="p-4 rounded-2xl border bg-black text-white space-y-3">
-      <button
-        onClick={startRecording}
-        disabled={listening}
-        className={`px-4 py-2 rounded ${listening ? "bg-red-600" : "bg-blue-600"}`}
-      >
-        {listening ? "Listening..." : "🎙️ Tap to Speak"}
-      </button>
-
-      <div className="text-sm text-zinc-300 min-h-[2rem]">
-        {transcript ? (
-          <span className="opacity-90">“{transcript}”</span>
-        ) : (
-          <span className="text-zinc-500">Your words appear here</span>
-        )}
-      </div>
-    </div>
+  return React.createElement(
+    "div",
+    { className: "p-4 rounded-2xl border bg-black text-white space-y-3" },
+    React.createElement(
+      "button",
+      {
+        onClick: startRecording,
+        disabled: listening,
+        className: `px-4 py-2 rounded ${listening ? "bg-red-600" : "bg-blue-600"}`
+      },
+      listening ? "Listening..." : "🎙️ Tap to Speak"
+    ),
+    React.createElement(
+      "div",
+      { className: "text-sm text-zinc-300 min-h-[2rem]" },
+      transcript
+        ? React.createElement("span", { className: "opacity-90" }, `"${transcript}"`)
+        : React.createElement("span", { className: "text-zinc-500" }, "Your words appear here")
+    )
   );
 }
