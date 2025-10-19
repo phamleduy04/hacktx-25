@@ -10,4 +10,10 @@ export default defineSchema({
   numbers: defineTable({
     value: v.number(),
   }),
+  webrtc_signaling: defineTable({
+    type: v.union(v.literal("offer"), v.literal("answer"), v.literal("ice-candidate")),
+    sdp: v.string(),
+    roomId: v.string(),
+    timestamp: v.number(),
+  }).index("by_room", ["roomId"]),
 });
