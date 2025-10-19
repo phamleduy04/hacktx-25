@@ -56,16 +56,16 @@ function Track({ trackData, pitStopPosition = 0.5 }: { trackData: TrackData; pit
       </mesh>
       
       {/* Pit Stop Sign */}
-      <mesh position={[pitStopPosition3D.x, pitStopPosition3D.y + 15, pitStopPosition3D.z]}>
+      {/* <mesh position={[pitStopPosition3D.x, pitStopPosition3D.y + 15, pitStopPosition3D.z]}>
         <boxGeometry args={[60, 20, 5]} />
         <meshLambertMaterial color={0xffffff} />
-      </mesh>
+      </mesh> */}
       
       {/* Pit Stop Text (using a simple box as placeholder) */}
-      <mesh position={[pitStopPosition3D.x, pitStopPosition3D.y + 25, pitStopPosition3D.z]}>
+      {/* <mesh position={[pitStopPosition3D.x, pitStopPosition3D.y + 25, pitStopPosition3D.z]}>
         <boxGeometry args={[40, 8, 2]} />
         <meshLambertMaterial color={0x000000} />
-      </mesh>
+      </mesh> */}
 
       {/* Lap Indicator - Start/Finish Line */}
       <LapIndicator position={lapIndicatorPosition3D} />
