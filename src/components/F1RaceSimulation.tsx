@@ -22,8 +22,8 @@ interface Driver {
 }
 
 const DRIVERS: Driver[] = [
-    { id: 0, name: "HAM", team: "Mercedes", color: "#00D2BE" },
-    { id: 1, name: "VER", team: "Red Bull", color: "#0600EF" },
+    { id: 0, name: "ALB", team: "Williams", color: "#0052CC" },
+    { id: 1, name: "VER", team: "Red Bull", color: "#FFD700" },
     { id: 2, name: "LEC", team: "Ferrari", color: "#DC0000" },
     { id: 3, name: "NOR", team: "McLaren", color: "#FF8700" },
     { id: 4, name: "RUS", team: "Mercedes", color: "#1E90FF" },
@@ -316,16 +316,16 @@ export default function F1RaceSimulation({ className = '' }: F1RaceSimulationPro
         7: { laps: 0, lapTimes: [], isFinished: false, lastLapTime: 0, currentTrackPosition: 0, currentLap: 0 }
     });
 
-    // Car telemetry state
+    // Car telemetry state - AI cars have slower base speed
     const [carTelemetry, setCarTelemetry] = useState<Record<number, CarTelemetry>>({
         0: { tireWearPercentage: 0, performanceDropSeconds: 0, lapsSincePit: 0, lastPitLap: 0, baseSpeed: carSpeed, currentSpeed: carSpeed, raceIncident: "None" },
-        1: { tireWearPercentage: 0, performanceDropSeconds: 0, lapsSincePit: 0, lastPitLap: 0, baseSpeed: carSpeed, currentSpeed: carSpeed, raceIncident: "None", speedBoostActive: false, speedDropActive: false, speedVariationDuration: 0, speedVariationAmount: 0 },
-        2: { tireWearPercentage: 0, performanceDropSeconds: 0, lapsSincePit: 0, lastPitLap: 0, baseSpeed: carSpeed, currentSpeed: carSpeed, raceIncident: "None", speedBoostActive: false, speedDropActive: false, speedVariationDuration: 0, speedVariationAmount: 0 },
-        3: { tireWearPercentage: 0, performanceDropSeconds: 0, lapsSincePit: 0, lastPitLap: 0, baseSpeed: carSpeed, currentSpeed: carSpeed, raceIncident: "None", speedBoostActive: false, speedDropActive: false, speedVariationDuration: 0, speedVariationAmount: 0 },
-        4: { tireWearPercentage: 0, performanceDropSeconds: 0, lapsSincePit: 0, lastPitLap: 0, baseSpeed: carSpeed, currentSpeed: carSpeed, raceIncident: "None", speedBoostActive: false, speedDropActive: false, speedVariationDuration: 0, speedVariationAmount: 0 },
-        5: { tireWearPercentage: 0, performanceDropSeconds: 0, lapsSincePit: 0, lastPitLap: 0, baseSpeed: carSpeed, currentSpeed: carSpeed, raceIncident: "None", speedBoostActive: false, speedDropActive: false, speedVariationDuration: 0, speedVariationAmount: 0 },
-        6: { tireWearPercentage: 0, performanceDropSeconds: 0, lapsSincePit: 0, lastPitLap: 0, baseSpeed: carSpeed, currentSpeed: carSpeed, raceIncident: "None", speedBoostActive: false, speedDropActive: false, speedVariationDuration: 0, speedVariationAmount: 0 },
-        7: { tireWearPercentage: 0, performanceDropSeconds: 0, lapsSincePit: 0, lastPitLap: 0, baseSpeed: carSpeed, currentSpeed: carSpeed, raceIncident: "None", speedBoostActive: false, speedDropActive: false, speedVariationDuration: 0, speedVariationAmount: 0 }
+        1: { tireWearPercentage: 0, performanceDropSeconds: 0, lapsSincePit: 0, lastPitLap: 0, baseSpeed: carSpeed * 1.01, currentSpeed: carSpeed * 1.01, raceIncident: "None", speedBoostActive: false, speedDropActive: false, speedVariationDuration: 0, speedVariationAmount: 0 },
+        2: { tireWearPercentage: 0, performanceDropSeconds: 0, lapsSincePit: 0, lastPitLap: 0, baseSpeed: carSpeed * 1.01, currentSpeed: carSpeed * 1.01, raceIncident: "None", speedBoostActive: false, speedDropActive: false, speedVariationDuration: 0, speedVariationAmount: 0 },
+        3: { tireWearPercentage: 0, performanceDropSeconds: 0, lapsSincePit: 0, lastPitLap: 0, baseSpeed: carSpeed * 1.01, currentSpeed: carSpeed * 1.01, raceIncident: "None", speedBoostActive: false, speedDropActive: false, speedVariationDuration: 0, speedVariationAmount: 0 },
+        4: { tireWearPercentage: 0, performanceDropSeconds: 0, lapsSincePit: 0, lastPitLap: 0, baseSpeed: carSpeed * 1.01, currentSpeed: carSpeed * 1.01, raceIncident: "None", speedBoostActive: false, speedDropActive: false, speedVariationDuration: 0, speedVariationAmount: 0 },
+        5: { tireWearPercentage: 0, performanceDropSeconds: 0, lapsSincePit: 0, lastPitLap: 0, baseSpeed: carSpeed * 1.01, currentSpeed: carSpeed * 1.01, raceIncident: "None", speedBoostActive: false, speedDropActive: false, speedVariationDuration: 0, speedVariationAmount: 0 },
+        6: { tireWearPercentage: 0, performanceDropSeconds: 0, lapsSincePit: 0, lastPitLap: 0, baseSpeed: carSpeed * 1.01, currentSpeed: carSpeed * 1.01, raceIncident: "None", speedBoostActive: false, speedDropActive: false, speedVariationDuration: 0, speedVariationAmount: 0 },
+        7: { tireWearPercentage: 0, performanceDropSeconds: 0, lapsSincePit: 0, lastPitLap: 0, baseSpeed: carSpeed * 1.01, currentSpeed: carSpeed * 1.01, raceIncident: "None", speedBoostActive: false, speedDropActive: false, speedVariationDuration: 0, speedVariationAmount: 0 }
     });
     const [raceStartTime, setRaceStartTime] = useState<number | null>(null);
     const sliderId = useId();
@@ -336,6 +336,34 @@ export default function F1RaceSimulation({ className = '' }: F1RaceSimulationPro
 
     // AI car pit stop logic
     const [aiCarPitLaps, setAiCarPitLaps] = useState<Record<number, number>>({});
+    
+    // Race incident state
+    const [activeIncident, setActiveIncident] = useState<{ type: string; endTime: number } | null>(null);
+
+    // Trigger race incident function
+    const triggerRaceIncident = useCallback(() => {
+        if (activeIncident) return; // Don't trigger new incident if one is active
+        
+        const incidentTypes = ['Yellow Flag', 'Safety Car', 'VSC'];
+        const incidentProbs = [0.6, 0.2, 0.2];
+        const incidentType = incidentTypes[Math.random() < incidentProbs[0] ? 0 : Math.random() < incidentProbs[0] + incidentProbs[1] ? 1 : 2];
+        
+        const duration = incidentType === 'Safety Car' ? 30 : incidentType === 'VSC' ? 20 : 15; // seconds
+        const endTime = Date.now() + duration * 1000;
+        
+        setActiveIncident({ type: incidentType, endTime });
+        
+        // Apply incident to all cars
+        setCarTelemetry(prev => {
+            const updated = { ...prev };
+            Object.keys(updated).forEach(carId => {
+                updated[parseInt(carId)].raceIncident = incidentType;
+            });
+            return updated;
+        });
+        
+        console.log(`Race incident: ${incidentType} for ${duration} seconds`);
+    }, [activeIncident]);
 
     // Update car telemetry (tire wear, performance degradation)
     const updateCarTelemetry = useCallback((carId: number, delta: number) => {
@@ -345,20 +373,33 @@ export default function F1RaceSimulation({ className = '' }: F1RaceSimulationPro
 
             if (!telemetry) return updated;
 
-            // Calculate tire wear: linear increase + random variation
-            const baseWearRate = 0.05; // 0.05% per second
-            const randomVariation = (Math.random() - 0.5) * 0.04; // ±0.02% variation
-            const wearIncrease = (baseWearRate + randomVariation) * delta;
+            // Calculate tire wear: realistic lap-based wear (1.5-3.5% per lap)
+            // Assuming ~60 second laps, convert to per-second rate
+            const baseWearPerLap = 1.5 + Math.random() * 2.0; // 1.5-3.5% per lap
+            const baseWearPerSecond = baseWearPerLap / 60; // Convert to per-second
+            const randomVariation = Math.random() * 0.3; // 0-0.3% additional variation (always positive)
+            const wearIncrease = (baseWearPerSecond + randomVariation) * delta;
 
             telemetry.tireWearPercentage = Math.min(100, telemetry.tireWearPercentage + wearIncrease);
 
-            // Calculate performance drop based on tire wear
-            const performanceDropRate = 0.001; // 0.001s per 1% tire wear
-            telemetry.performanceDropSeconds = telemetry.tireWearPercentage * performanceDropRate;
+            // Calculate performance drop based on tire wear (matching notebook formula)
+            const baseDrop = (telemetry.tireWearPercentage / 100) ** 2 * 4.0;
+            const randomComponent = (Math.random() - 0.5) * 0.2; // ±0.1s variation
+            telemetry.performanceDropSeconds = Math.max(0, baseDrop + randomComponent);
 
-            // Update current speed based on performance drop
-            const speedReduction = telemetry.performanceDropSeconds / 100;
-            telemetry.currentSpeed = telemetry.baseSpeed * (1 - speedReduction);
+            // Update current speed based on performance drop (much more aggressive impact)
+            const speedReduction = (telemetry.tireWearPercentage / 100) ** 1.2 * 0.3;
+            let currentSpeed = telemetry.baseSpeed * (1 - speedReduction);
+            
+            // Apply incident speed reduction
+            if (activeIncident) {
+                const incidentMultiplier = activeIncident.type === 'Safety Car' ? 0.4 : 
+                                         activeIncident.type === 'VSC' ? 0.6 : 0.9;
+                currentSpeed *= incidentMultiplier;
+            }
+            
+            // Store base speed with tire wear and incident effects
+            telemetry.currentSpeed = currentSpeed;
 
             // AI car speed variations (cars 1-7 only)
             if (carId >= 1 && carId <= 7) {
@@ -400,17 +441,22 @@ export default function F1RaceSimulation({ className = '' }: F1RaceSimulationPro
                         telemetry.speedVariationAmount = 0;
                         telemetry.speedVariationDuration = 0;
                     } else {
-                        // Apply speed variation
+                        // Apply speed variation on top of tire wear effects
                         const speedMultiplier = 1 + (telemetry.speedVariationAmount || 0);
-                        telemetry.currentSpeed = telemetry.baseSpeed * (1 - speedReduction) * speedMultiplier;
+                        const calculatedSpeed = currentSpeed * speedMultiplier;
+                        // Cap speed to never exceed base speed (before tire wear)
+                        telemetry.currentSpeed = Math.min(telemetry.baseSpeed, calculatedSpeed);
                     }
                 }
             }
 
             return updated;
         });
-    }, []);
+    }, [activeIncident]);
 
+
+    // Track last gap update time
+    const lastGapUpdateTime = useRef<number>(0);
 
     // Handle real-time position updates
     const handlePositionUpdate = useCallback((carId: number, trackPosition: number, currentLap: number) => {
@@ -424,6 +470,14 @@ export default function F1RaceSimulation({ className = '' }: F1RaceSimulationPro
 
             return updated;
         });
+        
+        // Trigger gap updates more frequently (every ~12 seconds for 5 times per lap)
+        const now = Date.now();
+        if (now - lastGapUpdateTime.current >= 12000) { // 12 seconds
+            lastGapUpdateTime.current = now;
+            // Force scoreboard update by triggering a state change
+            setCarRaceData(prev => ({ ...prev }));
+        }
     }, []);
 
     // Handle lap completion - store crossing timestamps
@@ -456,7 +510,7 @@ export default function F1RaceSimulation({ className = '' }: F1RaceSimulationPro
             const updated = { ...prev };
             const telemetry = updated[carId];
             if (telemetry) {
-                telemetry.lapsSincePit += 1;
+                telemetry.lapsSincePit = lapNumber - telemetry.lastPitLap;
                 console.log(`Car ${carId} laps since pit: ${telemetry.lapsSincePit}`);
             }
             return updated;
@@ -479,22 +533,22 @@ export default function F1RaceSimulation({ className = '' }: F1RaceSimulationPro
                 7: { laps: 0, lapTimes: [], isFinished: false, lastLapTime: 0, currentTrackPosition: 0, currentLap: 0 }
             });
             
-            // Reset telemetry with speed variation properties
+            // Reset telemetry with speed variation properties - AI cars have slower base speed
             setCarTelemetry({
                 0: { tireWearPercentage: 0, performanceDropSeconds: 0, lapsSincePit: 0, lastPitLap: 0, baseSpeed: carSpeed, currentSpeed: carSpeed, raceIncident: "None" },
-                1: { tireWearPercentage: 0, performanceDropSeconds: 0, lapsSincePit: 0, lastPitLap: 0, baseSpeed: carSpeed, currentSpeed: carSpeed, raceIncident: "None", speedBoostActive: false, speedDropActive: false, speedVariationDuration: 0, speedVariationAmount: 0 },
-                2: { tireWearPercentage: 0, performanceDropSeconds: 0, lapsSincePit: 0, lastPitLap: 0, baseSpeed: carSpeed, currentSpeed: carSpeed, raceIncident: "None", speedBoostActive: false, speedDropActive: false, speedVariationDuration: 0, speedVariationAmount: 0 },
-                3: { tireWearPercentage: 0, performanceDropSeconds: 0, lapsSincePit: 0, lastPitLap: 0, baseSpeed: carSpeed, currentSpeed: carSpeed, raceIncident: "None", speedBoostActive: false, speedDropActive: false, speedVariationDuration: 0, speedVariationAmount: 0 },
-                4: { tireWearPercentage: 0, performanceDropSeconds: 0, lapsSincePit: 0, lastPitLap: 0, baseSpeed: carSpeed, currentSpeed: carSpeed, raceIncident: "None", speedBoostActive: false, speedDropActive: false, speedVariationDuration: 0, speedVariationAmount: 0 },
-                5: { tireWearPercentage: 0, performanceDropSeconds: 0, lapsSincePit: 0, lastPitLap: 0, baseSpeed: carSpeed, currentSpeed: carSpeed, raceIncident: "None", speedBoostActive: false, speedDropActive: false, speedVariationDuration: 0, speedVariationAmount: 0 },
-                6: { tireWearPercentage: 0, performanceDropSeconds: 0, lapsSincePit: 0, lastPitLap: 0, baseSpeed: carSpeed, currentSpeed: carSpeed, raceIncident: "None", speedBoostActive: false, speedDropActive: false, speedVariationDuration: 0, speedVariationAmount: 0 },
-                7: { tireWearPercentage: 0, performanceDropSeconds: 0, lapsSincePit: 0, lastPitLap: 0, baseSpeed: carSpeed, currentSpeed: carSpeed, raceIncident: "None", speedBoostActive: false, speedDropActive: false, speedVariationDuration: 0, speedVariationAmount: 0 }
+                1: { tireWearPercentage: 0, performanceDropSeconds: 0, lapsSincePit: 0, lastPitLap: 0, baseSpeed: carSpeed * 0.98, currentSpeed: carSpeed * 1.01, raceIncident: "None", speedBoostActive: false, speedDropActive: false, speedVariationDuration: 0, speedVariationAmount: 0 },
+                2: { tireWearPercentage: 0, performanceDropSeconds: 0, lapsSincePit: 0, lastPitLap: 0, baseSpeed: carSpeed * 1.001, currentSpeed: carSpeed * 1.01, raceIncident: "None", speedBoostActive: false, speedDropActive: false, speedVariationDuration: 0, speedVariationAmount: 0 },
+                3: { tireWearPercentage: 0, performanceDropSeconds: 0, lapsSincePit: 0, lastPitLap: 0, baseSpeed: carSpeed * 0.999, currentSpeed: carSpeed * 1.01, raceIncident: "None", speedBoostActive: false, speedDropActive: false, speedVariationDuration: 0, speedVariationAmount: 0 },
+                4: { tireWearPercentage: 0, performanceDropSeconds: 0, lapsSincePit: 0, lastPitLap: 0, baseSpeed: carSpeed * 1.003, currentSpeed: carSpeed * 1.01, raceIncident: "None", speedBoostActive: false, speedDropActive: false, speedVariationDuration: 0, speedVariationAmount: 0 },
+                5: { tireWearPercentage: 0, performanceDropSeconds: 0, lapsSincePit: 0, lastPitLap: 0, baseSpeed: carSpeed * 0.985, currentSpeed: carSpeed * 1.01, raceIncident: "None", speedBoostActive: false, speedDropActive: false, speedVariationDuration: 0, speedVariationAmount: 0 },
+                6: { tireWearPercentage: 0, performanceDropSeconds: 0, lapsSincePit: 0, lastPitLap: 0, baseSpeed: carSpeed * 0.975, currentSpeed: carSpeed * 1.01, raceIncident: "None", speedBoostActive: false, speedDropActive: false, speedVariationDuration: 0, speedVariationAmount: 0 },
+                7: { tireWearPercentage: 0, performanceDropSeconds: 0, lapsSincePit: 0, lastPitLap: 0, baseSpeed: carSpeed * 0.97, currentSpeed: carSpeed * 1.01, raceIncident: "None", speedBoostActive: false, speedDropActive: false, speedVariationDuration: 0, speedVariationAmount: 0 }
             });
             
-            // Initialize AI car pit stop laps (random between 4-12 laps)
+            // Initialize AI car pit stop laps (random between 3-8 laps for balanced pit stops)
             const newAiCarPitLaps: Record<number, number> = {};
             for (let carId = 1; carId <= 7; carId++) {
-                newAiCarPitLaps[carId] = 4 + Math.floor(Math.random() * 9); // 4-12 laps
+                newAiCarPitLaps[carId] = 3 + Math.floor(Math.random() * 6); // 3-8 laps
             }
             setAiCarPitLaps(newAiCarPitLaps);
             
@@ -578,10 +632,30 @@ export default function F1RaceSimulation({ className = '' }: F1RaceSimulationPro
             [0, 1, 2, 3, 4, 5, 6, 7].forEach(carId => {
                 updateCarTelemetry(carId, 1); // Update every second
             });
+            
+            // Check for incident end
+            if (activeIncident && Date.now() >= activeIncident.endTime) {
+                setActiveIncident(null);
+                // Clear incident from all cars
+                setCarTelemetry(prev => {
+                    const updated = { ...prev };
+                    Object.keys(updated).forEach(carId => {
+                        updated[parseInt(carId)].raceIncident = "None";
+                    });
+                    return updated;
+                });
+                console.log(`Race incident cleared: ${activeIncident.type}`);
+            }
+            
+            // Random incident trigger (5% chance per second, matching notebook)
+            if (!activeIncident && Math.random() < 0.001) {
+                alert("Race incident triggered");
+                triggerRaceIncident();
+            }
         }, 1000);
 
         return () => clearInterval(interval);
-    }, [isRaceStarted, updateCarTelemetry]);
+    }, [isRaceStarted, updateCarTelemetry, activeIncident, triggerRaceIncident]);
 
     // Track last telemetry send time
     const lastSendTimeRef = useRef<number>(0);
@@ -702,7 +776,7 @@ export default function F1RaceSimulation({ className = '' }: F1RaceSimulationPro
         }
     }, [decisionQuery]);
 
-    // AI car pit stop logic - monitor AI cars and trigger pit stops at assigned laps
+    // AI car pit stop logic - monitor AI cars and trigger pit stops at assigned laps or based on tire wear/performance
     useEffect(() => {
         if (!isRaceStarted) return;
 
@@ -710,26 +784,44 @@ export default function F1RaceSimulation({ className = '' }: F1RaceSimulationPro
         for (let carId = 1; carId <= 7; carId++) {
             const carData = carRaceData[carId];
             const assignedPitLap = aiCarPitLaps[carId];
+            const telemetry = carTelemetry[carId];
             
-            if (carData && assignedPitLap && carData.currentLap >= assignedPitLap) {
-                // Check if car is not already in pit stop and hasn't pitted recently
-                const telemetry = carTelemetry[carId];
-                if (telemetry && telemetry.lapsSincePit >= 2) { // At least 2 laps since last pit
-                    console.log(`AI Car ${carId} triggering pit stop at lap ${carData.currentLap}`);
-                    setPitStopToggles(prev => ({
-                        ...prev,
-                        [carId]: true
-                    }));
-                    
-                    // Assign new random pit lap for next pit stop
-                    setAiCarPitLaps(prev => ({
-                        ...prev,
-                        [carId]: assignedPitLap + 4 + Math.floor(Math.random() * 9) // Next pit in 4-12 laps
-                    }));
-                }
+            if (!carData || !telemetry) continue;
+            
+            // Check if car is not already in pit stop and hasn't pitted recently
+            const canPit = telemetry.lapsSincePit >= 2; // At least 2 laps since last pit
+            const isNotInPit = !pitStopToggles[carId];
+            
+            let shouldPit = false;
+            let pitReason = "";
+            
+            // Check scheduled pit stop
+            if (assignedPitLap && carData.currentLap >= assignedPitLap && canPit && isNotInPit) {
+                shouldPit = true;
+                pitReason = `scheduled at lap ${carData.currentLap}`;
+            }
+            
+            // Check tire wear-based pit stop (75% wear threshold)
+            if (!shouldPit && telemetry.tireWearPercentage >= 40 && canPit && isNotInPit) {
+                shouldPit = true;
+                pitReason = `tire wear ${telemetry.tireWearPercentage.toFixed(1)}%`;
+            }
+            
+            if (shouldPit) {
+                console.log(`AI Car ${carId} triggering pit stop - ${pitReason}`);
+                setPitStopToggles(prev => ({
+                    ...prev,
+                    [carId]: true
+                }));
+                
+                // Assign new random pit lap for next pit stop (3-8 laps for balanced pit stops)
+                setAiCarPitLaps(prev => ({
+                    ...prev,
+                    [carId]: (carData.currentLap || 0) + 3 + Math.floor(Math.random() * 6) // Next pit in 3-8 laps
+                }));
             }
         }
-    }, [isRaceStarted, carRaceData, aiCarPitLaps, carTelemetry]);
+    }, [isRaceStarted, carRaceData, aiCarPitLaps, carTelemetry, pitStopToggles]);
 
     useEffect(() => {
         loadTrackData()
@@ -856,7 +948,7 @@ export default function F1RaceSimulation({ className = '' }: F1RaceSimulationPro
                     </div>
 
                     {/* Car Speed Slider */}
-                    <div className="space-y-2">
+                    {/* <div className="space-y-2">
                         <label htmlFor={speedSliderId} className="text-sm font-medium text-gray-700">
                             Car Speed: {(carSpeed * 1000).toFixed(1)}
                         </label>
@@ -869,7 +961,7 @@ export default function F1RaceSimulation({ className = '' }: F1RaceSimulationPro
                             step={0.1}
                             className="w-48"
                         />
-                    </div>
+                    </div> */}
 
                     {/* Pit Stop Controls */}
                     <div className="space-y-2">

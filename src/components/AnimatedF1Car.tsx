@@ -2,7 +2,7 @@ import React, { useRef, useMemo, useCallback, forwardRef, useImperativeHandle } 
 import { useFrame } from '@react-three/fiber';
 import { useGLTF } from '@react-three/drei';
 import * as THREE from 'three';
-import type { TrackData } from '../utils/trackUtils';
+import { getCurveSpeedMultiplier, type TrackData } from '../utils/trackUtils';
 
 interface AnimatedF1CarProps {
   primary?: boolean;
@@ -77,6 +77,10 @@ const F1Car = forwardRef<THREE.Group, AnimatedF1CarProps>(({
   const currentOffset = useRef({ x: startXOffset ?? Math.random() * 500, z: 0 });
   const targetOffset = useRef({ x: startXOffset ?? Math.random() * 500, z: 0 });
   const offsetDirection = useRef({ x: 0, z: 0 });
+  
+  // Passing state
+  const overtakeInProgress = useRef(false);
+  const targetLateralOffset = useRef(0);
   const lastDirectionChange = useRef(0);
   const directionChangeInterval = useRef(2 + Math.random() * 3); // Change direction every 2-5 seconds
 
@@ -140,8 +144,42 @@ const F1Car = forwardRef<THREE.Group, AnimatedF1CarProps>(({
       return; // Don't move car during pit stop
     }
 
-    // Update animation time
-    const currentSpeed = isFinished.current ? speed * 0.5 : speed; // Reduce speed after finishing
+    // Update animation time with curve speed multiplier
+    const trackPosition = (animationTime.current + startOffset) % 1;
+    const curveMultiplier = getCurveSpeedMultiplier(trackPosition, trackData.curve);
+    const baseSpeed = isFinished.current ? speed * 0.5 : speed; // Reduce speed after finishing
+    const currentSpeed = baseSpeed * curveMultiplier;
+    
+    // Simple passing logic: if on straight and speed is higher than base, allow slight position adjustment
+    const isOnStraightSection = curveMultiplier >= 0.9; // Nearly full speed means straight
+    if (isOnStraightSection && currentSpeed > baseSpeed * 0.95) {
+      // Gradually adjust lateral offset for passing effect
+      if (!overtakeInProgress.current && Math.random() < 0.01) { // 1% chance per frame to start overtake
+        overtakeInProgress.current = true;
+        targetLateralOffset.current = (Math.random() - 0.5) * 200; // Random lateral offset
+      }
+      
+      if (overtakeInProgress.current) {
+        // Smoothly move towards target offset
+        const lerpFactor = 0.02;
+        currentOffset.current.x += (targetLateralOffset.current - currentOffset.current.x) * lerpFactor;
+        
+        // End overtake after some time
+        if (Math.abs(currentOffset.current.x - targetLateralOffset.current) < 10) {
+          overtakeInProgress.current = false;
+        }
+      }
+    } else {
+      // Return to center line when not on straight or not fast enough
+      if (overtakeInProgress.current) {
+        const lerpFactor = 0.01;
+        currentOffset.current.x += (0 - currentOffset.current.x) * lerpFactor;
+        if (Math.abs(currentOffset.current.x) < 5) {
+          overtakeInProgress.current = false;
+        }
+      }
+    }
+    
     animationTime.current += delta * currentSpeed;
 
     // Update random offset
@@ -184,12 +222,12 @@ const F1Car = forwardRef<THREE.Group, AnimatedF1CarProps>(({
     }
 
     // Get position and direction from the track curve
-    const t = (animationTime.current + startOffset) % 1; // Keep between 0 and 1
+    const currentTrackPosition = (animationTime.current + startOffset) % 1; // Keep between 0 and 1
 
     // Lap detection logic
     if (isRaceStarted && raceStartTime.current !== null && !isFinished.current) {
       // Check if car has crossed the finish line (from ~0.99+ to ~0.01)
-      const hasCrossedLine = lastTrackPosition.current > 0.99 && t < 0.01;
+      const hasCrossedLine = lastTrackPosition.current > 0.99 && currentTrackPosition < 0.01;
       
       if (hasCrossedLine && !hasCrossedFinishLine.current) {
         hasCrossedFinishLine.current = true;
@@ -208,29 +246,29 @@ const F1Car = forwardRef<THREE.Group, AnimatedF1CarProps>(({
           isFinished.current = true;
           console.log(`Car ${_carId} finished the race!`);
         }
-      } else if (t > 0.1) {
+      } else if (currentTrackPosition > 0.1) {
         // Reset finish line crossing detection when car is away from start/finish line
         hasCrossedFinishLine.current = false;
       }
     }
     
     // Update last position for next frame
-    lastTrackPosition.current = t;
+    lastTrackPosition.current = currentTrackPosition;
 
     // Send real-time position update
     if (isRaceStarted && onPositionUpdate) {
-      onPositionUpdate(_carId, t, currentLap.current);
+      onPositionUpdate(_carId, currentTrackPosition, currentLap.current);
     }
 
     // Check if car needs pit stop and has reached pit stop position
-    if (needsPitStop.current && !isInPitStop.current && t >= pitStopPosition && t < pitStopPosition + 0.01) {
+    if (needsPitStop.current && !isInPitStop.current && currentTrackPosition >= pitStopPosition && currentTrackPosition < pitStopPosition + 0.01) {
       isInPitStop.current = true;
       pitStopStartTime.current = _state.clock.elapsedTime;
       onPitStopStart?.(_carId);
-      console.log(`Car ${_carId} entered pit stop at position ${t.toFixed(3)} (triggered by toggle)`);
+      console.log(`Car ${_carId} entered pit stop at position ${currentTrackPosition.toFixed(3)} (triggered by toggle)`);
     }
 
-    const position = trackData.curve.getPointAt(t);
+    const position = trackData.curve.getPointAt(currentTrackPosition);
 
     // Update car position (elevate above track and apply random offset)
     groupRef.current.position.set(
@@ -248,7 +286,7 @@ const F1Car = forwardRef<THREE.Group, AnimatedF1CarProps>(({
       }
     } else {
       // Fallback to tangent direction for first frame
-      const tangent = trackData.curve.getTangentAt(t);
+      const tangent = trackData.curve.getTangentAt(currentTrackPosition);
       const angle = Math.atan2(tangent.z, tangent.x);
       groupRef.current.rotation.y = angle;
     }
@@ -263,7 +301,7 @@ const F1Car = forwardRef<THREE.Group, AnimatedF1CarProps>(({
       console.log('Car Debug Info:');
       console.log(`Position: x=${position.x.toFixed(2)}, y=${position.y.toFixed(2)}, z=${position.z.toFixed(2)}`);
       console.log(`Scale: ${carScale}`);
-      console.log(`Animation time: ${t.toFixed(3)}`);
+      console.log(`Animation time: ${currentTrackPosition.toFixed(3)}`);
       console.log(`In pit stop: ${isInPitStop.current}`);
       console.log(`Track bounds: x=${trackData.bounds.minX.toFixed(0)} to ${trackData.bounds.maxX.toFixed(0)}, z=${trackData.bounds.minY.toFixed(0)} to ${trackData.bounds.maxY.toFixed(0)}`);
     }

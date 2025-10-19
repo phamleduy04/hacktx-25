@@ -170,6 +170,37 @@ export function isOnStraight(trackPosition: number, curve: THREE.CatmullRomCurve
 }
 
 /**
+ * Calculate curve speed multiplier based on track curvature
+ */
+export function getCurveSpeedMultiplier(trackPosition: number, curve: THREE.CatmullRomCurve3): number {
+  const sampleDistance = 0.05; // Sample over 5% of track
+  
+  // Get current position and nearby positions
+  const currentPos = curve.getPointAt(trackPosition);
+  const nextPos = curve.getPointAt((trackPosition + sampleDistance) % 1);
+  const prevPos = curve.getPointAt((trackPosition - sampleDistance + 1) % 1);
+  
+  // Calculate direction vectors
+  const currentDirection = new THREE.Vector3().subVectors(nextPos, currentPos).normalize();
+  const prevDirection = new THREE.Vector3().subVectors(currentPos, prevPos).normalize();
+  
+  // Calculate angle between direction vectors
+  const angle = Math.acos(Math.max(-1, Math.min(1, currentDirection.dot(prevDirection))));
+  const angleDegrees = (angle * 180) / Math.PI;
+  
+  // Map angle to speed multiplier
+  if (angleDegrees <= 5) {
+    return 1.0; // Straight section - full speed
+  } else if (angleDegrees <= 15) {
+    return 0.8; // Gentle curve - 80% speed
+  } else if (angleDegrees <= 30) {
+    return 0.7; // Medium curve - 70% speed
+  } else {
+    return 0.6; // Sharp curve - 60% speed
+  }
+}
+
+/**
  * Load and process track data
  */
 export async function loadTrackData(): Promise<TrackData> {
