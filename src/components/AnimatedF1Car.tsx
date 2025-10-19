@@ -5,6 +5,7 @@ import * as THREE from 'three';
 import type { TrackData } from '../utils/trackUtils';
 
 interface AnimatedF1CarProps {
+  primary?: boolean;
   trackData: TrackData;
   speed?: number;
   autoStart?: boolean;
@@ -24,6 +25,7 @@ interface AnimatedF1CarProps {
 }
 
 const F1Car = forwardRef<THREE.Group, AnimatedF1CarProps>(({ 
+  primary = false,
   trackData, 
   speed = 0.0008, 
   autoStart = true, 
@@ -42,7 +44,7 @@ const F1Car = forwardRef<THREE.Group, AnimatedF1CarProps>(({
   onPositionUpdate
 }, ref) => {
   const groupRef = useRef<THREE.Group>(null);
-  const { scene } = useGLTF('/f1_car.glb');
+  const { scene } = useGLTF(primary ? '/f1_car_1.glb' : '/f1_car_2.glb');
 
   // Expose the group ref to parent components
   useImperativeHandle(ref, () => {
@@ -83,12 +85,12 @@ const F1Car = forwardRef<THREE.Group, AnimatedF1CarProps>(({
     const scaledScene = scene.clone();
 
     // Use the carScale prop directly
-    scaledScene.scale.setScalar(carScale);
+    scaledScene.scale.setScalar(carScale * (primary ? 0.01 : 1));
 
     console.log(`Car scale: ${carScale}`);
 
     return scaledScene;
-  }, [scene, carScale]);
+  }, [scene, carScale, primary]);
 
   // Handle pit stop need toggle
   React.useEffect(() => {
@@ -233,7 +235,7 @@ const F1Car = forwardRef<THREE.Group, AnimatedF1CarProps>(({
     // Update car position (elevate above track and apply random offset)
     groupRef.current.position.set(
       position.x + currentOffset.current.x, 
-      position.y + 5, 
+      position.y + (primary ? 10 : 5), 
       position.z + currentOffset.current.z
     );
 
@@ -302,6 +304,7 @@ const F1Car = forwardRef<THREE.Group, AnimatedF1CarProps>(({
 });
 
 const AnimatedF1Car = forwardRef<THREE.Group, AnimatedF1CarProps>(({ 
+  primary,
   trackData, 
   speed, 
   autoStart, 
@@ -353,6 +356,7 @@ const AnimatedF1Car = forwardRef<THREE.Group, AnimatedF1CarProps>(({
   }
 
   return <F1Car 
+    primary={primary}
     ref={ref} 
     trackData={data} 
     speed={speed} 
