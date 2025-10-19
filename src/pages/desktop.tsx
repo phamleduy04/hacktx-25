@@ -38,7 +38,7 @@ export default function DesktopPage() {
           {/* 3D Model */}
           <div>
             <ControlledF1Viewer 
-              modelPath="/f1_car.glb"
+              modelPath="/f1_car_1.glb"
               orientationData={receivedData}
               enableAutoRotation={!receivedData}
             />
