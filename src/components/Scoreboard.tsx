@@ -36,6 +36,7 @@ export default function Scoreboard({ carRaceData, drivers, raceStartTime }: Scor
   // Track previous positions to detect changes
   const previousPositionsRef = useRef<Record<number, number>>({});
   const [positionChanges, setPositionChanges] = useState<Record<number, 'up' | 'down' | null>>({});
+  const [animatingCars, setAnimatingCars] = useState<Set<number>>(new Set());
   // Calculate positions and time gaps
   const calculatePositions = (): CarPosition[] => {
     const cars: CarPosition[] = [];
@@ -117,11 +118,13 @@ export default function Scoreboard({ carRaceData, drivers, raceStartTime }: Scor
   useEffect(() => {
     const prev = previousPositionsRef.current;
     const pending: Record<number, 'up' | 'down' | null> = {};
+    const newAnimatingCars = new Set<number>();
 
     positions.forEach((car) => {
       const prevPos = prev[car.carId];
       if (prevPos && prevPos !== car.position) {
         pending[car.carId] = car.position < prevPos ? 'up' : 'down';
+        newAnimatingCars.add(car.carId);
       } else if (!(car.carId in prev)) {
         pending[car.carId] = null;
       }
@@ -129,6 +132,8 @@ export default function Scoreboard({ carRaceData, drivers, raceStartTime }: Scor
 
     if (Object.keys(pending).length > 0) {
       setPositionChanges((old) => ({ ...old, ...pending }));
+      setAnimatingCars(newAnimatingCars);
+      
       const timeout = setTimeout(() => {
         setPositionChanges((old) => {
           const cleared: Record<number, 'up' | 'down' | null> = { ...old };
@@ -137,6 +142,7 @@ export default function Scoreboard({ carRaceData, drivers, raceStartTime }: Scor
           });
           return cleared;
         });
+        setAnimatingCars(new Set());
       }, 1200);
       return () => clearTimeout(timeout);
     }
@@ -164,13 +170,13 @@ export default function Scoreboard({ carRaceData, drivers, raceStartTime }: Scor
         {positions.map((car) => (
           <div
             key={car.carId}
-            className={`flex items-center justify-between px-3 py-2 rounded text-sm font-mono transition-transform duration-500 ${
+            className={`flex items-center justify-between px-3 py-2 rounded text-sm font-mono transition-all duration-700 ease-in-out ${
               car.isFinished 
                 ? 'bg-green-900/50 border-l-4 border-green-400' 
                 : car.laps < positions[0]?.laps 
                   ? 'bg-yellow-900/30 border-l-4 border-yellow-400'
                   : 'bg-gray-800/50 border-l-4 border-gray-400'
-            } ${positionChanges[car.carId] === 'up' ? 'ring-2 ring-green-400 scale-[1.02]' : ''} ${positionChanges[car.carId] === 'down' ? 'ring-2 ring-red-400 scale-[0.98]' : ''}`}
+            } ${positionChanges[car.carId] === 'up' ? 'shadow-lg shadow-green-400/20 animate-move_up' : ''} ${positionChanges[car.carId] === 'down' ? 'shadow-lg shadow-red-400/20 animate-move_down ' : ''}`}
           >
             <div className="flex items-center space-x-3">
               <div className="w-8 text-center font-bold">

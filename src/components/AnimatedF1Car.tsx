@@ -46,6 +46,12 @@ const F1Car = forwardRef<THREE.Group, AnimatedF1CarProps>(({
   const groupRef = useRef<THREE.Group>(null);
   const { scene } = useGLTF(primary ? '/f1_car_1.glb' : '/f1_car_2.glb');
 
+  // Keep speed reactive inside the render loop
+  const speedRef = useRef(speed);
+  React.useEffect(() => {
+    speedRef.current = speed;
+  }, [speed]);
+
   // Expose the group ref to parent components
   useImperativeHandle(ref, () => {
     if (!groupRef.current) {
@@ -147,7 +153,7 @@ const F1Car = forwardRef<THREE.Group, AnimatedF1CarProps>(({
     // Update animation time with curve speed multiplier
     const trackPosition = (animationTime.current + startOffset) % 1;
     const curveMultiplier = getCurveSpeedMultiplier(trackPosition, trackData.curve);
-    const baseSpeed = isFinished.current ? speed * 0.5 : speed; // Reduce speed after finishing
+    const baseSpeed = isFinished.current ? speedRef.current * 0.5 : speedRef.current; // Reduce speed after finishing
     const currentSpeed = baseSpeed * curveMultiplier;
     
     // Simple passing logic: if on straight and speed is higher than base, allow slight position adjustment
@@ -180,6 +186,7 @@ const F1Car = forwardRef<THREE.Group, AnimatedF1CarProps>(({
       }
     }
     
+
     animationTime.current += delta * currentSpeed;
 
     // Update random offset

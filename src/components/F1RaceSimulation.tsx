@@ -12,13 +12,20 @@ import { Button } from './ui/button';
 import { Switch } from './ui/switch';
 import { api } from '../../convex/_generated/api';
 import { useMutation, useQuery } from 'convex/react';
+import { toast } from 'sonner';
 
 import { ElevenLabsClient } from "@elevenlabs/elevenlabs-js";
 import { useConversation } from "@elevenlabs/react";
 
-const elevenlabs = new ElevenLabsClient({
-    apiKey: import.meta.env.VITE_ELEVENLABS_API_KEY, // Defaults to process.env.ELEVENLABS_API_KEY
-});
+// Initialize ElevenLabs client only when needed
+const getElevenLabsClient = () => {
+    const apiKey = import.meta.env.VITE_ELEVENLABS_API_KEY;
+    if (!apiKey) {
+        console.warn('VITE_ELEVENLABS_API_KEY is not set');
+        return null;
+    }
+    return new ElevenLabsClient({ apiKey });
+};
 // Driver configuration
 interface Driver {
     id: number;
@@ -88,7 +95,8 @@ function Scene({ trackData, carScale, carSpeed, followCar, setCarPosition, showT
     carTelemetry: Record<number, CarTelemetry>;
 }) {
 
-    const controlsRef = useRef<any>(null); // eslint-disable-line @typescript-eslint/no-explicit-any
+
+    const controlsRef = useRef<any>(null);
     const carRefs = useRef<(THREE.Group | null)[]>([null, null, null, null, null, null, null, null]);
     const [carWorldPositions, setCarWorldPositions] = useState<{ position: THREE.Vector3; rotation: THREE.Quaternion }[]>([
         { position: new THREE.Vector3(), rotation: new THREE.Quaternion() },
@@ -203,20 +211,20 @@ function Scene({ trackData, carScale, carSpeed, followCar, setCarPosition, showT
             <RaceTrack trackData={trackData} pitStopPosition={pitStopPosition} />
 
             {/* Debug: Track center marker */}
-            <mesh position={[getTrackCenter(trackData.bounds).x, 10, getTrackCenter(trackData.bounds).z]}>
+            {/* <mesh position={[getTrackCenter(trackData.bounds).x, 10, getTrackCenter(trackData.bounds).z]}>
                 <boxGeometry args={[50, 20, 50]} />
                 <meshBasicMaterial color="blue" wireframe />
-            </mesh>
+            </mesh> */}
 
             {/* Debug: Track bounds markers */}
-            <mesh position={[trackData.bounds.minX, 5, trackData.bounds.minY]}>
+            {/* <mesh position={[trackData.bounds.minX, 5, trackData.bounds.minY]}>
                 <boxGeometry args={[20, 10, 20]} />
                 <meshBasicMaterial color="green" />
-            </mesh>
-            <mesh position={[trackData.bounds.maxX, 5, trackData.bounds.maxY]}>
+            </mesh> */}
+            {/* <mesh position={[trackData.bounds.maxX, 5, trackData.bounds.maxY]}>
                 <boxGeometry args={[20, 10, 20]} />
                 <meshBasicMaterial color="yellow" />
-            </mesh>
+            </mesh> */}
 
             {/* Animated F1 Cars */}
             {[
@@ -345,7 +353,8 @@ export default function F1RaceSimulation({ className = '' }: F1RaceSimulationPro
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
     const [carScale, setCarScale] = useState(1500); // Default scale
-    const [carSpeed, _setCarSpeed] = useState(0.05); // Default speed
+    const carSpeed = 0.05; // Default speed
+    const [carSpeedMultiplier, setCarSpeedMultiplier] = useState(1); // Default speed multiplier
     const [followCar, setFollowCar] = useState(false); // Camera follow toggle
     const [selectedCarId, setSelectedCarId] = useState(0); // Selected car to follow
     const [carPosition, setCarPosition] = useState({ x: 0, y: 0, z: 0 });
@@ -353,9 +362,14 @@ export default function F1RaceSimulation({ className = '' }: F1RaceSimulationPro
     const [trailLength, setTrailLength] = useState(100); // Trail length
     const [trailWidth, setTrailWidth] = useState(25); // Trail width
     const [pitStopStatus, setPitStopStatus] = useState<Record<number, { isInPitStop: boolean; timeRemaining: number }>>({});
-    const [pitStopPosition, setPitStopPosition] = useState(0.5); // Default pit stop at halfway point
+    const [pitStopPosition, setPitStopPosition] = useState(0.99); // Default pit stop at halfway point
     const [pitStopToggles, setPitStopToggles] = useState<Record<number, boolean>>({ 0: false, 1: false, 2: false, 3: false, 4: false, 5: false, 6: false, 7: false });
     const [isRaceStarted, setIsRaceStarted] = useState(false); // Race start/stop state
+    const [tireWearMultiplier, setTireWearMultiplier] = useState(1);
+
+    // Preserve each car's baseline factor relative to the primary base speed so that
+    // adjusting the car speed slider scales everyone proportionally.
+    const baselineFactorsRef = useRef<Record<number, number>>({});
 
     // Race timing state
     const [carRaceData, setCarRaceData] = useState<Record<number, CarRaceData>>({
@@ -385,26 +399,33 @@ export default function F1RaceSimulation({ className = '' }: F1RaceSimulationPro
     const trailLengthId = useId();
     const trailWidthId = useId();
     const pitStopPositionId = useId();
+    const tireWearSliderId = useId();
+    const speedSliderId = useId();
 
     // AI car pit stop logic
     const [aiCarPitLaps, setAiCarPitLaps] = useState<Record<number, number>>({});
-    
+
     // Race incident state
     const [activeIncident, setActiveIncident] = useState<{ type: string; endTime: number } | null>(null);
 
     // Trigger race incident function
     const triggerRaceIncident = useCallback(() => {
         if (activeIncident) return; // Don't trigger new incident if one is active
-        
+
         const incidentTypes = ['Yellow Flag', 'Safety Car', 'VSC'];
         const incidentProbs = [0.6, 0.2, 0.2];
         const incidentType = incidentTypes[Math.random() < incidentProbs[0] ? 0 : Math.random() < incidentProbs[0] + incidentProbs[1] ? 1 : 2];
-        
+
         const duration = incidentType === 'Safety Car' ? 30 : incidentType === 'VSC' ? 20 : 15; // seconds
         const endTime = Date.now() + duration * 1000;
-        
+
+        toast(`Race incident: ${incidentType} for ${duration} seconds`, {
+            duration: 5000,
+            position: "top-center",
+        });
+
         setActiveIncident({ type: incidentType, endTime });
-        
+
         // Apply incident to all cars
         setCarTelemetry(prev => {
             const updated = { ...prev };
@@ -413,7 +434,7 @@ export default function F1RaceSimulation({ className = '' }: F1RaceSimulationPro
             });
             return updated;
         });
-        
+
         console.log(`Race incident: ${incidentType} for ${duration} seconds`);
     }, [activeIncident]);
 
@@ -430,7 +451,7 @@ export default function F1RaceSimulation({ className = '' }: F1RaceSimulationPro
             const baseWearPerLap = 1.5 + Math.random() * 2.0; // 1.5-3.5% per lap
             const baseWearPerSecond = baseWearPerLap / 60; // Convert to per-second
             const randomVariation = Math.random() * 0.3; // 0-0.3% additional variation (always positive)
-            const wearIncrease = (baseWearPerSecond + randomVariation) * delta;
+            const wearIncrease = (baseWearPerSecond + randomVariation) * delta * tireWearMultiplier;
 
             telemetry.tireWearPercentage = Math.min(100, telemetry.tireWearPercentage + wearIncrease);
 
@@ -441,15 +462,15 @@ export default function F1RaceSimulation({ className = '' }: F1RaceSimulationPro
 
             // Update current speed based on performance drop (much more aggressive impact)
             const speedReduction = (telemetry.tireWearPercentage / 100) ** 1.2 * 0.3;
-            let currentSpeed = telemetry.baseSpeed * (1 - speedReduction);
-            
+            let currentSpeed = telemetry.baseSpeed * (1 - speedReduction) * carSpeedMultiplier;
+
             // Apply incident speed reduction
             if (activeIncident) {
-                const incidentMultiplier = activeIncident.type === 'Safety Car' ? 0.4 : 
-                                         activeIncident.type === 'VSC' ? 0.6 : 0.9;
+                const incidentMultiplier = activeIncident.type === 'Safety Car' ? 0.4 :
+                    activeIncident.type === 'VSC' ? 0.6 : 0.9;
                 currentSpeed *= incidentMultiplier;
             }
-            
+
             // Store base speed with tire wear and incident effects
             telemetry.currentSpeed = currentSpeed;
 
@@ -485,7 +506,7 @@ export default function F1RaceSimulation({ className = '' }: F1RaceSimulationPro
                 // Apply active speed variations
                 if (telemetry.speedBoostActive || telemetry.speedDropActive) {
                     telemetry.speedVariationDuration = (telemetry.speedVariationDuration || 0) - delta;
-                    
+
                     if ((telemetry.speedVariationDuration || 0) <= 0) {
                         // Speed variation ended
                         telemetry.speedBoostActive = false;
@@ -502,6 +523,61 @@ export default function F1RaceSimulation({ className = '' }: F1RaceSimulationPro
                 }
             }
 
+            return updated;
+        });
+    }, [activeIncident, tireWearMultiplier, carSpeedMultiplier]);
+
+    // Initialize baseline factors once telemetry is set up
+    useEffect(() => {
+        if (Object.keys(baselineFactorsRef.current).length !== 0) return;
+        const factors: Record<number, number> = {};
+        for (let carId = 0; carId <= 7; carId++) {
+            const base = carTelemetry[carId]?.baseSpeed ?? carSpeed;
+            factors[carId] = base / carSpeed || 1;
+        }
+        baselineFactorsRef.current = factors;
+    }, [carTelemetry]);
+
+    // When a race starts and we reset car base speeds with new per-car offsets, refresh factors
+    useEffect(() => {
+        if (isRaceStarted) {
+            const factors: Record<number, number> = {};
+            for (let carId = 0; carId <= 7; carId++) {
+                const base = carTelemetry[carId]?.baseSpeed ?? carSpeed;
+                factors[carId] = base / carSpeed || 1;
+            }
+            baselineFactorsRef.current = factors;
+        }
+    }, [isRaceStarted, carTelemetry]);
+
+    // When the car speed slider changes, update baseSpeed and currentSpeed for all cars
+    useEffect(() => {
+        setCarTelemetry(prev => {
+            const updated = { ...prev } as Record<number, CarTelemetry>;
+            for (let carId = 0; carId <= 7; carId++) {
+                const telemetry = updated[carId];
+                if (!telemetry) continue;
+                const factor = baselineFactorsRef.current[carId] ?? 1;
+                telemetry.baseSpeed = carSpeed * factor;
+
+                // Recompute currentSpeed based on tire wear, incident, and any active speed variation
+                const wear = telemetry.tireWearPercentage / 100;
+                const speedReduction = Math.pow(wear, 1.2) * 0.3;
+                let currentSpeed = telemetry.baseSpeed * (1 - speedReduction);
+
+                if (activeIncident) {
+                    const incidentMultiplier = activeIncident.type === 'Safety Car' ? 0.4 :
+                        activeIncident.type === 'VSC' ? 0.6 : 0.9;
+                    currentSpeed *= incidentMultiplier;
+                }
+
+                const variation = telemetry.speedVariationAmount || 0;
+                if (variation !== 0 && (telemetry.speedBoostActive || telemetry.speedDropActive)) {
+                    currentSpeed = Math.min(telemetry.baseSpeed, currentSpeed * (1 + variation));
+                }
+
+                telemetry.currentSpeed = currentSpeed;
+            }
             return updated;
         });
     }, [activeIncident]);
@@ -522,7 +598,7 @@ export default function F1RaceSimulation({ className = '' }: F1RaceSimulationPro
 
             return updated;
         });
-        
+
         // Trigger gap updates more frequently (every ~12 seconds for 5 times per lap)
         const now = Date.now();
         if (now - lastGapUpdateTime.current >= 12000) { // 12 seconds
@@ -584,7 +660,7 @@ export default function F1RaceSimulation({ className = '' }: F1RaceSimulationPro
                 6: { laps: 0, lapTimes: [], isFinished: false, lastLapTime: 0, currentTrackPosition: 0, currentLap: 0 },
                 7: { laps: 0, lapTimes: [], isFinished: false, lastLapTime: 0, currentTrackPosition: 0, currentLap: 0 }
             });
-            
+
             // Reset telemetry with speed variation properties - AI cars have slower base speed
             setCarTelemetry({
                 0: { tireWearPercentage: 0, performanceDropSeconds: 0, lapsSincePit: 0, lastPitLap: 0, baseSpeed: carSpeed, currentSpeed: carSpeed, raceIncident: "None" },
@@ -596,14 +672,14 @@ export default function F1RaceSimulation({ className = '' }: F1RaceSimulationPro
                 6: { tireWearPercentage: 0, performanceDropSeconds: 0, lapsSincePit: 0, lastPitLap: 0, baseSpeed: carSpeed * 0.975, currentSpeed: carSpeed * 1.01, raceIncident: "None", speedBoostActive: false, speedDropActive: false, speedVariationDuration: 0, speedVariationAmount: 0 },
                 7: { tireWearPercentage: 0, performanceDropSeconds: 0, lapsSincePit: 0, lastPitLap: 0, baseSpeed: carSpeed * 0.97, currentSpeed: carSpeed * 1.01, raceIncident: "None", speedBoostActive: false, speedDropActive: false, speedVariationDuration: 0, speedVariationAmount: 0 }
             });
-            
+
             // Initialize AI car pit stop laps (random between 3-8 laps for balanced pit stops)
             const newAiCarPitLaps: Record<number, number> = {};
             for (let carId = 1; carId <= 7; carId++) {
                 newAiCarPitLaps[carId] = 3 + Math.floor(Math.random() * 6); // 3-8 laps
             }
             setAiCarPitLaps(newAiCarPitLaps);
-            
+
             setIsRaceStarted(true);
         } else {
             // Stopping race
@@ -611,7 +687,7 @@ export default function F1RaceSimulation({ className = '' }: F1RaceSimulationPro
             setRaceStartTime(null);
             setCurrentBox(false); // Reset audio flag when race stops
         }
-    }, [isRaceStarted, carSpeed]);
+    }, [isRaceStarted]);
 
     // Pit stop handlers
     const handlePitStopStart = (carId: number) => {
@@ -685,7 +761,7 @@ export default function F1RaceSimulation({ className = '' }: F1RaceSimulationPro
             [0, 1, 2, 3, 4, 5, 6, 7].forEach(carId => {
                 updateCarTelemetry(carId, 1); // Update every second
             });
-            
+
             // Check for incident end
             if (activeIncident && Date.now() >= activeIncident.endTime) {
                 setActiveIncident(null);
@@ -699,10 +775,9 @@ export default function F1RaceSimulation({ className = '' }: F1RaceSimulationPro
                 });
                 console.log(`Race incident cleared: ${activeIncident.type}`);
             }
-            
+
             // Random incident trigger (5% chance per second, matching notebook)
-            if (!activeIncident && Math.random() < 0.001) {
-                alert("Race incident triggered");
+            if (!activeIncident && Math.random() < 0.005) {
                 triggerRaceIncident();
             }
         }, 1000);
@@ -716,7 +791,7 @@ export default function F1RaceSimulation({ className = '' }: F1RaceSimulationPro
     // Convex integration for primary car (car 0) - send telemetry every 3 seconds
     useEffect(() => {
         if (!isRaceStarted || !trackData) return;
-        
+
         // Check if 3 seconds have passed since last send
         const now = Date.now();
         if (now - lastSendTimeRef.current < 3000) {
@@ -811,10 +886,17 @@ export default function F1RaceSimulation({ className = '' }: F1RaceSimulationPro
         };
 
         sendTelemetry();
+        lastSendTimeRef.current = now;
     }, [isRaceStarted, trackData, carRaceData, carTelemetry, addF1CarData]);
 
     const triggerPitStop = useCallback(async () => {
-        const audioStream = await elevenlabs.textToSpeech.convert("G7ILShrCNLfmS0A37SXS", {
+        const client = getElevenLabsClient();
+        if (!client) {
+            console.warn('ElevenLabs client not available');
+            return;
+        }
+        
+        const audioStream = await client.textToSpeech.convert("G7ILShrCNLfmS0A37SXS", {
             text: "Box Box Box",
             modelId: "eleven_flash_v2_5",
         });
@@ -859,6 +941,13 @@ export default function F1RaceSimulation({ className = '' }: F1RaceSimulationPro
         if (car0Decision && car0Decision.decision === "PIT NOW" && !currentBox) {
             console.log("Car 0 received PIT NOW decision from Convex");
 
+            toast("Received PIT NOW decision from HPC", {
+                duration: 5000,
+                position: "top-center",
+            });
+
+
+
             triggerPitStop().then(() => setCurrentBox(true));
             
             setPitStopToggles(prev => ({
@@ -877,35 +966,35 @@ export default function F1RaceSimulation({ className = '' }: F1RaceSimulationPro
             const carData = carRaceData[carId];
             const assignedPitLap = aiCarPitLaps[carId];
             const telemetry = carTelemetry[carId];
-            
+
             if (!carData || !telemetry) continue;
-            
+
             // Check if car is not already in pit stop and hasn't pitted recently
             const canPit = telemetry.lapsSincePit >= 2; // At least 2 laps since last pit
             const isNotInPit = !pitStopToggles[carId];
-            
+
             let shouldPit = false;
             let pitReason = "";
-            
+
             // Check scheduled pit stop
             if (assignedPitLap && carData.currentLap >= assignedPitLap && canPit && isNotInPit) {
                 shouldPit = true;
                 pitReason = `scheduled at lap ${carData.currentLap}`;
             }
-            
+
             // Check tire wear-based pit stop (75% wear threshold)
             if (!shouldPit && telemetry.tireWearPercentage >= 40 && canPit && isNotInPit) {
                 shouldPit = true;
                 pitReason = `tire wear ${telemetry.tireWearPercentage.toFixed(1)}%`;
             }
-            
+
             if (shouldPit) {
                 console.log(`AI Car ${carId} triggering pit stop - ${pitReason}`);
                 setPitStopToggles(prev => ({
                     ...prev,
                     [carId]: true
                 }));
-                
+
                 // Assign new random pit lap for next pit stop (3-8 laps for balanced pit stops)
                 setAiCarPitLaps(prev => ({
                     ...prev,
@@ -1015,7 +1104,7 @@ export default function F1RaceSimulation({ className = '' }: F1RaceSimulationPro
                     <div className="space-y-2">
                         <Button
                             onClick={() => setFollowCar(!followCar)}
-                            variant={followCar ? "default" : "outline"}
+                            variant={followCar ? "default" : "secondary"}
                             className="w-48"
                         >
                             {followCar ? `🎥 Following Car ${selectedCarId + 1}` : "📷 Free Camera"}
@@ -1039,6 +1128,38 @@ export default function F1RaceSimulation({ className = '' }: F1RaceSimulationPro
                             min={750}
                             max={2000}
                             step={10}
+                            className="w-48"
+                        />
+                    </div>
+
+                    {/* Car Speed Slider */}
+                    <div className="space-y-2">
+                        <label htmlFor={speedSliderId} className="text-sm font-medium text-gray-700">
+                            Car Speed Multiplier: {(carSpeedMultiplier).toFixed(1)}x
+                        </label>
+                        <Slider
+                            id={speedSliderId}
+                            value={[carSpeedMultiplier]}
+                            onValueChange={(value) => setCarSpeedMultiplier(value[0])}
+                            min={0.1}
+                            max={20}
+                            step={0.01}
+                            className="w-48"
+                        />
+                    </div>
+
+                    {/* Tire Wear Multiplier */}
+                    <div className="space-y-2">
+                        <label htmlFor={tireWearSliderId} className="text-sm font-medium text-gray-700">
+                            Tire Wear Multiplier: {tireWearMultiplier.toFixed(1)}x
+                        </label>
+                        <Slider
+                            id={tireWearSliderId}
+                            value={[tireWearMultiplier]}
+                            onValueChange={(value) => setTireWearMultiplier(value[0])}
+                            min={0.5}
+                            max={10}
+                            step={0.1}
                             className="w-48"
                         />
                     </div>

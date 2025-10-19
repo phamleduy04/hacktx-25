@@ -6,6 +6,7 @@ import { ConvexProvider } from 'convex/react';
 import { Suspense } from 'react';
 import { BrowserRouter, useRoutes } from 'react-router-dom';
 import routes from '~react-pages';
+import { Toaster } from './components/ui/sonner';
 
 const convex = new ConvexReactClient(import.meta.env.VITE_CONVEX_URL as string);
 
@@ -20,6 +21,7 @@ createRoot(document.getElementById('root') as HTMLElement).render(
     <ConvexProvider client={convex}>
         <BrowserRouter>
           <App />
+          <Toaster />
         </BrowserRouter>
       </ConvexProvider>
   </StrictMode>,
