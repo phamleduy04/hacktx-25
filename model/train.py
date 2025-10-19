@@ -230,38 +230,60 @@ def add_decision_labels(data):
 
 def generate_training_data(use_real_data=True, num_samples=2000):
     """
-    Generates training data for the F1 pit strategy model.
-    Tries to use real F1 data with ACTUAL pit decisions, falls back to synthetic data.
+    Generates HYBRID training data for the F1 pit strategy model.
+    Combines real F1 data with synthetic strategic scenarios.
     
     Args:
         use_real_data (bool): Whether to attempt to fetch real F1 data
-        num_samples (int): Number of synthetic samples if real data unavailable
+        num_samples (int): Number of synthetic samples to add
         
     Returns:
-        pd.DataFrame: Dataset with features and target decision labels
+        pd.DataFrame: Hybrid dataset with features and target decision labels
     """
+    all_data = []
+    
     if use_real_data:
         try:
             print("Fetching real F1 data with ACTUAL pit stop decisions...")
-            data = fetch_real_f1_data(years=[2024, 2023], max_sessions=8)
+            real_data = fetch_real_f1_data(years=[2024, 2023], max_sessions=8)
             
-            # Real data already has 'decision' column from actual pit stops!
-            print(f"\n✅ Using REAL pit decisions from actual races")
-            print(f"Data distribution:\n{data['decision'].value_counts()}")
-            print(f"Percentage that pitted: {(data['decision'] == 'PIT NOW').sum() / len(data) * 100:.1f}%\n")
-            return data
+            print(f"\n✅ Fetched {len(real_data)} laps from real F1 races")
+            print(f"Real data distribution:\n{real_data['decision'].value_counts()}")
+            print(f"Real data race incidents:\n{real_data['race_incident'].value_counts()}\n")
+            
+            all_data.append(real_data)
             
         except Exception as e:
             print(f"\n⚠️  Failed to fetch real data: {e}")
-            print("Falling back to synthetic data generation...")
+            print("Using synthetic data only...\n")
     
-    # Fall back to synthetic data
-    return generate_training_data_synthetic(num_samples)
+    # ALWAYS add synthetic strategic scenarios to ensure good coverage
+    print(f"Generating {num_samples} synthetic strategic scenarios...")
+    synthetic_data = generate_training_data_synthetic(num_samples)
+    all_data.append(synthetic_data)
+    
+    # Combine real + synthetic data
+    if len(all_data) > 1:
+        combined_data = pd.concat(all_data, ignore_index=True)
+        print(f"\n✅ HYBRID DATASET CREATED")
+        print(f"Total samples: {len(combined_data)}")
+        print(f"  - Real F1 data: {len(all_data[0])}")
+        print(f"  - Synthetic data: {len(synthetic_data)}")
+    else:
+        combined_data = all_data[0]
+        print(f"\n✅ Using synthetic data only: {len(combined_data)} samples")
+    
+    print(f"\nFinal data distribution:\n{combined_data['decision'].value_counts()}")
+    print(f"Final race incidents:\n{combined_data['race_incident'].value_counts()}")
+    print(f"Percentage that pitted: {(combined_data['decision'] == 'PIT NOW').sum() / len(combined_data) * 100:.1f}%\n")
+    
+    return combined_data
 
 
 def generate_training_data_synthetic(num_samples=2000):
     """
     Generates a synthetic dataset for training the F1 pit strategy model.
+    Enhanced to ensure good representation of strategic scenarios.
     
     Args:
         num_samples (int): Number of training samples to generate
@@ -271,28 +293,37 @@ def generate_training_data_synthetic(num_samples=2000):
     """
     print(f"Generating {num_samples} synthetic F1 scenario samples...")
     
-    # Generate features
-    undercut_overcut_opportunity = np.random.choice([0, 1], size=num_samples, p=[0.7, 0.3])
-    tire_wear_percentage = np.random.randint(5, 98, size=num_samples)
+    # Split samples: 70% normal scenarios, 30% strategic scenarios
+    normal_samples = int(num_samples * 0.7)
+    strategic_samples = num_samples - normal_samples
     
-    # Generate performance drop with correlation to tire wear but more variance
-    # Base performance drop correlated with wear + random component
-    base_drop = np.random.uniform(0.1, 4.5, size=num_samples) * (tire_wear_percentage / 100)**1.5
-    random_component = np.random.uniform(-0.5, 1.5, size=num_samples)
+    all_samples = []
+    
+    # 1. NORMAL RACING SCENARIOS (70%)
+    undercut_overcut_opportunity = np.random.choice([0, 1], size=normal_samples, p=[0.8, 0.2])
+    tire_wear_percentage = np.random.randint(5, 98, size=normal_samples)
+    
+    # Generate performance drop with correlation to tire wear
+    base_drop = np.random.uniform(0.1, 4.5, size=normal_samples) * (tire_wear_percentage / 100)**1.5
+    random_component = np.random.uniform(-0.5, 1.5, size=normal_samples)
     performance_drop_seconds = np.clip(base_drop + random_component, 0.1, 4.5)
     
-    track_position = np.random.randint(1, 21, size=num_samples)
+    track_position = np.random.randint(1, 21, size=normal_samples)
     race_incident = np.random.choice(
         ['None', 'Yellow Flag', 'Safety Car', 'VSC'],
-        size=num_samples,
+        size=normal_samples,
         p=[0.85, 0.08, 0.04, 0.03]
     )
     
-    # Generate laps since pit (correlated with tire wear)
-    laps_since_pit = np.round((tire_wear_percentage / 100) * 35).astype(int)
-    laps_since_pit = np.clip(laps_since_pit, 1, 50)  # Between 1 and 50 laps
-
-    data = pd.DataFrame({
+    # Generate laps since pit with VARIABLE degradation rates
+    # Different tire compounds and tracks have different wear rates
+    # Degradation factor: 0.5 (soft compound/high deg) to 1.5 (hard compound/low deg)
+    degradation_factor = np.random.uniform(0.5, 1.5, size=normal_samples)
+    base_laps = (tire_wear_percentage / 100) * 35 * degradation_factor
+    laps_since_pit = np.round(base_laps).astype(int)
+    laps_since_pit = np.clip(laps_since_pit, 1, 60)  # Allow up to 60 laps
+    
+    normal_data = pd.DataFrame({
         'undercut_overcut_opportunity': undercut_overcut_opportunity,
         'tire_wear_percentage': tire_wear_percentage,
         'performance_drop_seconds': performance_drop_seconds,
@@ -300,10 +331,77 @@ def generate_training_data_synthetic(num_samples=2000):
         'race_incident': race_incident,
         'laps_since_pit': laps_since_pit
     })
-
+    all_samples.append(normal_data)
+    
+    # 2. STRATEGIC SCENARIOS (30%) - Ensure good coverage of critical situations
+    strategic_samples_per_type = strategic_samples // 5  # Split into 5 types now
+    
+    # 2a. Safety Car scenarios (should PIT)
+    sc_samples = pd.DataFrame({
+        'undercut_overcut_opportunity': np.random.choice([0, 1], size=strategic_samples_per_type),
+        'tire_wear_percentage': np.random.randint(20, 90, size=strategic_samples_per_type),
+        'performance_drop_seconds': np.random.uniform(0.5, 3.0, size=strategic_samples_per_type),
+        'track_position': np.random.randint(1, 21, size=strategic_samples_per_type),
+        'race_incident': ['Safety Car'] * strategic_samples_per_type,
+        'laps_since_pit': np.random.randint(5, 40, size=strategic_samples_per_type)
+    })
+    all_samples.append(sc_samples)
+    
+    # 2b. VSC scenarios (should PIT)
+    vsc_samples = pd.DataFrame({
+        'undercut_overcut_opportunity': np.random.choice([0, 1], size=strategic_samples_per_type),
+        'tire_wear_percentage': np.random.randint(25, 85, size=strategic_samples_per_type),
+        'performance_drop_seconds': np.random.uniform(0.5, 2.5, size=strategic_samples_per_type),
+        'track_position': np.random.randint(1, 21, size=strategic_samples_per_type),
+        'race_incident': ['VSC'] * strategic_samples_per_type,
+        'laps_since_pit': np.random.randint(5, 35, size=strategic_samples_per_type)
+    })
+    all_samples.append(vsc_samples)
+    
+    # 2c. Critical tire wear scenarios (should PIT)
+    critical_wear_samples = pd.DataFrame({
+        'undercut_overcut_opportunity': np.random.choice([0, 1], size=strategic_samples_per_type),
+        'tire_wear_percentage': np.random.randint(85, 98, size=strategic_samples_per_type),
+        'performance_drop_seconds': np.random.uniform(2.5, 4.5, size=strategic_samples_per_type),
+        'track_position': np.random.randint(1, 21, size=strategic_samples_per_type),
+        'race_incident': ['None'] * strategic_samples_per_type,
+        'laps_since_pit': np.random.randint(30, 50, size=strategic_samples_per_type)
+    })
+    all_samples.append(critical_wear_samples)
+    
+    # 2d. Fresh tire scenarios (should STAY OUT)
+    fresh_tire_samples = pd.DataFrame({
+        'undercut_overcut_opportunity': np.random.choice([0, 1], size=strategic_samples_per_type, p=[0.9, 0.1]),
+        'tire_wear_percentage': np.random.randint(5, 25, size=strategic_samples_per_type),
+        'performance_drop_seconds': np.random.uniform(0.1, 0.8, size=strategic_samples_per_type),
+        'track_position': np.random.randint(1, 21, size=strategic_samples_per_type),
+        'race_incident': ['None'] * strategic_samples_per_type,
+        'laps_since_pit': np.random.randint(1, 8, size=strategic_samples_per_type)
+    })
+    all_samples.append(fresh_tire_samples)
+    
+    # 2e. HIGH DEGRADATION scenarios (soft tires, hot track)
+    # High tire wear in few laps - should still PIT based on wear/performance
+    high_deg_samples = pd.DataFrame({
+        'undercut_overcut_opportunity': np.random.choice([0, 1], size=strategic_samples_per_type),
+        'tire_wear_percentage': np.random.randint(75, 98, size=strategic_samples_per_type),  # High wear
+        'performance_drop_seconds': np.random.uniform(2.5, 4.5, size=strategic_samples_per_type),  # Big perf drop
+        'track_position': np.random.randint(1, 21, size=strategic_samples_per_type),
+        'race_incident': ['None'] * strategic_samples_per_type,
+        'laps_since_pit': np.random.randint(8, 20, size=strategic_samples_per_type)  # FEW laps but high wear!
+    })
+    all_samples.append(high_deg_samples)
+    
+    # Combine all samples
+    data = pd.concat(all_samples, ignore_index=True)
+    
     # Add decision labels using shared logic
     data = add_decision_labels(data)
-    print(f"Data generation complete. Distribution:\n{data['decision'].value_counts()}")
+    
+    print(f"Synthetic data generation complete:")
+    print(f"  Distribution: {data['decision'].value_counts().to_dict()}")
+    print(f"  Race incidents: {data['race_incident'].value_counts().to_dict()}")
+    
     return data
 
 
@@ -335,7 +433,7 @@ def create_preprocessor():
     return preprocessor
 
 
-def train_model(X_train, y_train, max_depth=5):
+def train_model(X_train, y_train, max_depth=8):
     """
     Trains a Decision Tree classifier for pit strategy prediction.
     Uses regularization to prevent overfitting.
@@ -350,13 +448,16 @@ def train_model(X_train, y_train, max_depth=5):
     """
     print(f"Training Decision Tree model with regularization...")
     print(f"  - max_depth={max_depth}")
-    print(f"  - min_samples_split=50")
-    print(f"  - min_samples_leaf=20")
+    print(f"  - min_samples_split=40")
+    print(f"  - min_samples_leaf=15")
+    print(f"  - max_features=None (use all features)")
+    print(f"  - class_weight='balanced'")
     
     model = DecisionTreeClassifier(
         max_depth=max_depth,
-        min_samples_split=50,  # Require at least 50 samples to split
-        min_samples_leaf=20,   # Require at least 20 samples in leaf nodes
+        min_samples_split=40,  # Require at least 40 samples to split
+        min_samples_leaf=15,   # Require at least 15 samples in leaf nodes
+        max_features=None,     # Consider all features at each split
         random_state=42,
         class_weight='balanced'  # Handle class imbalance
     )
@@ -422,11 +523,11 @@ def save_model(model, preprocessor, output_dir='output'):
 def main():
     """Main training pipeline."""
     print("\n" + "="*60)
-    print("F1 PIT STRATEGY MODEL - TRAINING PIPELINE")
+    print("F1 PIT STRATEGY MODEL - HYBRID TRAINING PIPELINE")
     print("="*60 + "\n")
     
-    # 1. Generate training data (tries real F1 data first, falls back to synthetic)
-    dataset = generate_training_data(use_real_data=True, num_samples=2000)
+    # 1. Generate HYBRID training data (real F1 data + synthetic strategic scenarios)
+    dataset = generate_training_data(use_real_data=True, num_samples=3000)
     
     # 2. Split features and target
     # Keep only the required features for the model
@@ -461,7 +562,7 @@ def main():
     X_test_processed = preprocessor.transform(X_test)
     
     # 6. Train model with regularization to prevent overfitting
-    model = train_model(X_train_processed, y_train, max_depth=5)
+    model = train_model(X_train_processed, y_train, max_depth=8)
     
     # 7. Evaluate model
     evaluate_model(model, X_test_processed, y_test)
