@@ -11,7 +11,6 @@ export function useWebRTCHost(roomId: string) {
 
   // Convex mutations and queries
   const createOfferMutation = useMutation(api.webrtc.createOffer);
-  const createAnswerMutation = useMutation(api.webrtc.createAnswer);
   const addIceCandidateMutation = useMutation(api.webrtc.addIceCandidate);
   const clearSignalingMutation = useMutation(api.webrtc.clearSignaling);
   const answerQuery = useQuery(api.webrtc.getAnswer, { roomId });

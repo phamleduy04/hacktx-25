@@ -292,7 +292,7 @@ export default function F1RaceSimulation({ className = '' }: F1RaceSimulationPro
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
     const [carScale, setCarScale] = useState(1500); // Default scale
-    const [carSpeed, setCarSpeed] = useState(0.05); // Default speed
+    const [carSpeed, _setCarSpeed] = useState(0.05); // Default speed
     const [followCar, setFollowCar] = useState(false); // Camera follow toggle
     const [selectedCarId, setSelectedCarId] = useState(0); // Selected car to follow
     const [carPosition, setCarPosition] = useState({ x: 0, y: 0, z: 0 });
@@ -329,7 +329,6 @@ export default function F1RaceSimulation({ className = '' }: F1RaceSimulationPro
     });
     const [raceStartTime, setRaceStartTime] = useState<number | null>(null);
     const sliderId = useId();
-    const speedSliderId = useId();
     const trailLengthId = useId();
     const trailWidthId = useId();
     const pitStopPositionId = useId();
@@ -946,22 +945,6 @@ export default function F1RaceSimulation({ className = '' }: F1RaceSimulationPro
                             className="w-48"
                         />
                     </div>
-
-                    {/* Car Speed Slider */}
-                    {/* <div className="space-y-2">
-                        <label htmlFor={speedSliderId} className="text-sm font-medium text-gray-700">
-                            Car Speed: {(carSpeed * 1000).toFixed(1)}
-                        </label>
-                        <Slider
-                            id={speedSliderId}
-                            value={[carSpeed * 1000]}
-                            onValueChange={(value) => setCarSpeed(value[0] / 1000)}
-                            min={0.1}
-                            max={1000}
-                            step={0.1}
-                            className="w-48"
-                        />
-                    </div> */}
 
                     {/* Pit Stop Controls */}
                     <div className="space-y-2">

@@ -1,6 +1,3 @@
-import { useMutation, useQuery } from "convex/react";
-import { api } from "@convex/api";
-
 export interface OrientationData {
   type: 'orientation';
   alpha: number;    // 0-360 (compass)
@@ -19,6 +16,7 @@ export class WebRTCManager {
   private dataChannel: RTCDataChannel | null = null;
   private onDataReceived: ((data: OrientationData) => void) | null = null;
   private onConnectionStateChange: ((state: ConnectionState) => void) | null = null;
+  // @ts-expect-error - isHost is used to determine if the current instance is the host
   private isHost: boolean = false;
   private roomId: string = '';
   private connectionTimeout: NodeJS.Timeout | null = null;
