@@ -146,6 +146,30 @@ export function createTrackBorders(curve: THREE.CatmullRomCurve3, trackWidth: nu
 }
 
 /**
+ * Check if a car is on a straight section of the track
+ */
+export function isOnStraight(trackPosition: number, curve: THREE.CatmullRomCurve3): boolean {
+  const sampleDistance = 0.05; // Sample over 5% of track
+  const angleThreshold = 5; // 5 degrees threshold
+  
+  // Get current position and nearby positions
+  const currentPos = curve.getPointAt(trackPosition);
+  const nextPos = curve.getPointAt((trackPosition + sampleDistance) % 1);
+  const prevPos = curve.getPointAt((trackPosition - sampleDistance + 1) % 1);
+  
+  // Calculate direction vectors
+  const currentDirection = new THREE.Vector3().subVectors(nextPos, currentPos).normalize();
+  const prevDirection = new THREE.Vector3().subVectors(currentPos, prevPos).normalize();
+  
+  // Calculate angle between direction vectors
+  const angle = Math.acos(Math.max(-1, Math.min(1, currentDirection.dot(prevDirection))));
+  const angleDegrees = (angle * 180) / Math.PI;
+  
+  // Return true if angle change is below threshold (straight section)
+  return angleDegrees < angleThreshold;
+}
+
+/**
  * Load and process track data
  */
 export async function loadTrackData(): Promise<TrackData> {

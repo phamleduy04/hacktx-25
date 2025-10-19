@@ -10,7 +10,7 @@ interface AnimatedF1CarProps {
   autoStart?: boolean;
   carScale?: number;
   startOffset?: number;
-  xOffset?: number; // X offset for car positioning
+  startXOffset?: number;
   carId?: number;
   pitStopPosition?: number; // Position on track (0-1) where pit stop occurs
   pitStopDuration?: number; // Duration of pit stop in seconds
@@ -29,7 +29,7 @@ const F1Car = forwardRef<THREE.Group, AnimatedF1CarProps>(({
   autoStart = true, 
   carScale = 500,
   startOffset = 0,
-  xOffset = 0,
+  startXOffset = 0,
   carId: _carId = 0,
   pitStopPosition = 0.5, // Default pit stop at halfway point
   pitStopDuration = 2, // 20 seconds
@@ -70,6 +70,13 @@ const F1Car = forwardRef<THREE.Group, AnimatedF1CarProps>(({
   const hasCrossedFinishLine = useRef(false);
   const isFinished = useRef(false);
   const raceStartTime = useRef<number | null>(null);
+
+  // Random offset state
+  const currentOffset = useRef({ x: startXOffset ?? Math.random() * 500, z: 0 });
+  const targetOffset = useRef({ x: startXOffset ?? Math.random() * 500, z: 0 });
+  const offsetDirection = useRef({ x: 0, z: 0 });
+  const lastDirectionChange = useRef(0);
+  const directionChangeInterval = useRef(2 + Math.random() * 3); // Change direction every 2-5 seconds
 
   // Scale and position the car appropriately
   const scaledScene = useMemo(() => {
@@ -135,6 +142,45 @@ const F1Car = forwardRef<THREE.Group, AnimatedF1CarProps>(({
     const currentSpeed = isFinished.current ? speed * 0.5 : speed; // Reduce speed after finishing
     animationTime.current += delta * currentSpeed;
 
+    // Update random offset
+    const currentTime = _state.clock.elapsedTime;
+    
+    // Check if it's time to change direction
+    if (currentTime - lastDirectionChange.current >= directionChangeInterval.current) {
+      // Generate new random direction
+      const angle = Math.random() * Math.PI * 2;
+      const speed = (0.5 + Math.random() * 1.5) * 10; // Speed between 0.5 and 2.0 units per second
+      offsetDirection.current.x = Math.cos(angle) * speed;
+      offsetDirection.current.z = Math.sin(angle) * speed;
+      
+      // Generate new target offset
+      const maxOffset = 100;
+      targetOffset.current.x = (Math.random() - 0.5) * maxOffset * 2;
+      targetOffset.current.z = (Math.random() - 0.5) * maxOffset * 2;
+      
+      // Update timing for next direction change
+      lastDirectionChange.current = currentTime;
+      directionChangeInterval.current = 2 + Math.random() * 3;
+    }
+    
+    // Gradually move current offset towards target
+    const lerpFactor = delta * 0.5; // Adjust speed of offset changes
+    currentOffset.current.x += (targetOffset.current.x - currentOffset.current.x) * lerpFactor;
+    currentOffset.current.z += (targetOffset.current.z - currentOffset.current.z) * lerpFactor;
+    
+    // Apply direction movement
+    currentOffset.current.x += offsetDirection.current.x * delta;
+    currentOffset.current.z += offsetDirection.current.z * delta;
+    
+    // Clamp offset to maximum of 20 units
+    const maxOffset = 100;
+    const currentDistance = Math.sqrt(currentOffset.current.x ** 2 + currentOffset.current.z ** 2);
+    if (currentDistance > maxOffset) {
+      const scale = maxOffset / currentDistance;
+      currentOffset.current.x *= scale;
+      currentOffset.current.z *= scale;
+    }
+
     // Get position and direction from the track curve
     const t = (animationTime.current + startOffset) % 1; // Keep between 0 and 1
 
@@ -184,8 +230,12 @@ const F1Car = forwardRef<THREE.Group, AnimatedF1CarProps>(({
 
     const position = trackData.curve.getPointAt(t);
 
-    // Update car position (elevate above track and apply X offset)
-    groupRef.current.position.set(position.x, position.y + 5, position.z);
+    // Update car position (elevate above track and apply random offset)
+    groupRef.current.position.set(
+      position.x + currentOffset.current.x, 
+      position.y + 5, 
+      position.z + currentOffset.current.z
+    );
 
     // Calculate rotation based on movement direction (using previous position)
     if (previousPosition.current) {
@@ -241,9 +291,7 @@ const F1Car = forwardRef<THREE.Group, AnimatedF1CarProps>(({
 
   return (
     <group ref={groupRef}>
-      <group position={[xOffset, 0, 0]}>
-        <primitive object={scaledScene} />
-      </group>
+      <primitive object={scaledScene} />
       {/* Replace car model with a simple cube for debugging */}
       {/* <mesh position={[0, -200, 0]}>
         <boxGeometry args={[carScale, carScale, carScale]} />
@@ -259,7 +307,6 @@ const AnimatedF1Car = forwardRef<THREE.Group, AnimatedF1CarProps>(({
   autoStart, 
   carScale, 
   startOffset, 
-  xOffset,
   carId: _carId,
   pitStopPosition,
   pitStopDuration,
@@ -312,7 +359,6 @@ const AnimatedF1Car = forwardRef<THREE.Group, AnimatedF1CarProps>(({
     autoStart={autoStart} 
     carScale={carScale} 
     startOffset={startOffset} 
-    xOffset={xOffset}
     carId={_carId}
     pitStopPosition={pitStopPosition}
     pitStopDuration={pitStopDuration}

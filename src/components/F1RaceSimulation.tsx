@@ -6,33 +6,44 @@ import RaceTrack from './RaceTrack';
 import AnimatedF1Car from './AnimatedF1Car';
 import CarTrail from './CarTrail';
 import Scoreboard from './Scoreboard';
-import { loadTrackData, getTrackCenter, type TrackData } from '../utils/trackUtils';
+import { loadTrackData, getTrackCenter, isOnStraight, type TrackData } from '../utils/trackUtils';
+import { getPitStopDecision } from '../utils/pitStopApi';
 import { Slider } from './ui/slider';
 import { Button } from './ui/button';
 import { Switch } from './ui/switch';
 
 // Driver configuration
 interface Driver {
-  id: number;
-  name: string;
-  team: string;
-  color: string;
+    id: number;
+    name: string;
+    team: string;
+    color: string;
 }
 
 const DRIVERS: Driver[] = [
-  { id: 0, name: "HAM", team: "Mercedes", color: "#00D2BE" },
-  { id: 1, name: "VER", team: "Red Bull", color: "#0600EF" },
-  { id: 2, name: "LEC", team: "Ferrari", color: "#DC0000" },
-  { id: 3, name: "NOR", team: "McLaren", color: "#FF8700" }
+    { id: 0, name: "HAM", team: "Mercedes", color: "#00D2BE" },
+    { id: 1, name: "VER", team: "Red Bull", color: "#0600EF" },
+    { id: 2, name: "LEC", team: "Ferrari", color: "#DC0000" },
+    { id: 3, name: "NOR", team: "McLaren", color: "#FF8700" }
 ];
 
 interface CarRaceData {
-  laps: number;
-  lapTimes: number[]; // Array of lap completion timestamps
-  isFinished: boolean;
-  lastLapTime: number; // Timestamp of last lap completion
-  currentTrackPosition: number; // Real-time track position (0-1)
-  currentLap: number; // Current lap number
+    laps: number;
+    lapTimes: number[]; // Array of lap completion timestamps
+    isFinished: boolean;
+    lastLapTime: number; // Timestamp of last lap completion
+    currentTrackPosition: number; // Real-time track position (0-1)
+    currentLap: number; // Current lap number
+}
+
+interface CarTelemetry {
+    tireWearPercentage: number; // 0-100
+    performanceDropSeconds: number; // Accumulated time loss
+    lapsSincePit: number;
+    lastPitLap: number;
+    baseSpeed: number; // Car's natural speed
+    currentSpeed: number; // Degraded speed
+    raceIncident: string; // "None" | "Yellow Flag" | "Safety Car" | "Collision"
 }
 
 
@@ -40,14 +51,13 @@ interface F1RaceSimulationProps {
     className?: string;
 }
 
-function Scene({ trackData, carScale, carSpeed, followCar, setCarPosition, showTrail, trailColor, trailLength, trailWidth, selectedCarId, pitStopPosition, handlePitStopStart, handlePitStopEnd, pitStopToggles, handlePitStopToggle, carOffsets, isRaceStarted, handleLapComplete, handlePositionUpdate }: {
+function Scene({ trackData, carScale, carSpeed, followCar, setCarPosition, showTrail, trailLength, trailWidth, selectedCarId, pitStopPosition, handlePitStopStart, handlePitStopEnd, pitStopToggles, handlePitStopToggle, isRaceStarted, handleLapComplete, handlePositionUpdate, carTelemetry }: {
     trackData: TrackData;
     carScale: number;
     carSpeed: number;
     followCar: boolean;
     setCarPosition: (position: { x: number; y: number; z: number }) => void;
     showTrail: boolean;
-    trailColor: string;
     trailLength: number;
     trailWidth: number;
     selectedCarId: number;
@@ -56,15 +66,16 @@ function Scene({ trackData, carScale, carSpeed, followCar, setCarPosition, showT
     handlePitStopEnd: (carId: number) => void;
     pitStopToggles: Record<number, boolean>;
     handlePitStopToggle: (carId: number, enabled: boolean) => void;
-    carOffsets: number[];
     isRaceStarted: boolean;
     handleLapComplete: (carId: number, lapNumber: number, lapTime: number) => void;
     handlePositionUpdate: (carId: number, trackPosition: number, currentLap: number) => void;
+    carTelemetry: Record<number, CarTelemetry>;
 }) {
     const controlsRef = useRef<any>(null); // eslint-disable-line @typescript-eslint/no-explicit-any
     const carRefs = useRef<(THREE.Group | null)[]>([null, null, null, null]);
-    const [carWorldPositions, setCarWorldPositions] = useState<THREE.Vector3[]>([
-        new THREE.Vector3(), new THREE.Vector3(), new THREE.Vector3(), new THREE.Vector3()
+    const [carWorldPositions, setCarWorldPositions] = useState<{ position: THREE.Vector3; rotation: THREE.Quaternion }[]>([
+        { position: new THREE.Vector3(), rotation: new THREE.Quaternion() },
+        { position: new THREE.Vector3(), rotation: new THREE.Quaternion() },
     ]);
 
     // Set up camera to show the entire track
@@ -100,10 +111,21 @@ function Scene({ trackData, carScale, carSpeed, followCar, setCarPosition, showT
             carRefs.current.forEach((carRef, index) => {
                 if (carRef) {
                     const worldPosition = new THREE.Vector3();
+                    const worldRotation = new THREE.Quaternion();
+
                     carRef.getWorldPosition(worldPosition);
+                    carRef.getWorldQuaternion(worldRotation);
+
+                    const worldRotationEuler = new THREE.Euler();
+                    worldRotationEuler.setFromQuaternion(worldRotation);
+
+                    // Use the world position directly (random offset is now handled internally by the car)
+                    const updatedPosition = worldPosition;
+
+
                     setCarWorldPositions(prev => {
                         const newPositions = [...prev];
-                        newPositions[index] = worldPosition;
+                        newPositions[index] = { position: updatedPosition, rotation: worldRotation };
                         return newPositions;
                     });
                 }
@@ -166,10 +188,10 @@ function Scene({ trackData, carScale, carSpeed, followCar, setCarPosition, showT
 
             {/* Animated F1 Cars */}
             {[
-                { id: 0, offset: 0.005, xOffset: carOffsets[0] },
-                { id: 1, offset: 0, xOffset: carOffsets[1] },
-                { id: 2, offset: 0.995, xOffset: carOffsets[2] },
-                { id: 3, offset: 0.990, xOffset: carOffsets[3] }
+                { id: 0, offset: 0.005 },
+                { id: 1, offset: 0 },
+                { id: 2, offset: 0.995 },
+                { id: 3, offset: 0.990 }
             ].map((car, index) => (
                 <AnimatedF1Car
                     key={car.id}
@@ -178,9 +200,8 @@ function Scene({ trackData, carScale, carSpeed, followCar, setCarPosition, showT
                     }}
                     carId={car.id}
                     startOffset={car.offset}
-                    xOffset={car.xOffset}
                     trackData={trackData}
-                    speed={carSpeed}
+                    speed={carTelemetry[car.id]?.currentSpeed || carSpeed}
                     autoStart={true}
                     carScale={carScale}
                     pitStopPosition={pitStopPosition}
@@ -201,9 +222,8 @@ function Scene({ trackData, carScale, carSpeed, followCar, setCarPosition, showT
                     // biome-ignore lint/suspicious/noArrayIndexKey: rip
                     key={`trail-car-${index}`}
                     carId={index}
-                    carPosition={position}
-                    carOffset={carOffsets[index]}
-                    color={trailColor}
+                    carPosition={position.position}
+                    color={DRIVERS[index]?.color || '#ff6b6b'}
                     maxLength={trailLength}
                     width={trailWidth}
                 />
@@ -242,21 +262,27 @@ export default function F1RaceSimulation({ className = '' }: F1RaceSimulationPro
     const [selectedCarId, setSelectedCarId] = useState(0); // Selected car to follow
     const [carPosition, setCarPosition] = useState({ x: 0, y: 0, z: 0 });
     const [showTrail, setShowTrail] = useState(true); // Trail toggle
-    const [trailColor, setTrailColor] = useState('#ff6b6b'); // Trail color
     const [trailLength, setTrailLength] = useState(100); // Trail length
     const [trailWidth, setTrailWidth] = useState(25); // Trail width
     const [pitStopStatus, setPitStopStatus] = useState<Record<number, { isInPitStop: boolean; timeRemaining: number }>>({});
     const [pitStopPosition, setPitStopPosition] = useState(0.5); // Default pit stop at halfway point
     const [pitStopToggles, setPitStopToggles] = useState<Record<number, boolean>>({ 0: false, 1: false, 2: false, 3: false });
     const [isRaceStarted, setIsRaceStarted] = useState(false); // Race start/stop state
-    const carOffsets = [-75, -25, 25, 75]; // X offsets for each car
-    
+
     // Race timing state
     const [carRaceData, setCarRaceData] = useState<Record<number, CarRaceData>>({
         0: { laps: 0, lapTimes: [], isFinished: false, lastLapTime: 0, currentTrackPosition: 0, currentLap: 0 },
         1: { laps: 0, lapTimes: [], isFinished: false, lastLapTime: 0, currentTrackPosition: 0, currentLap: 0 },
         2: { laps: 0, lapTimes: [], isFinished: false, lastLapTime: 0, currentTrackPosition: 0, currentLap: 0 },
         3: { laps: 0, lapTimes: [], isFinished: false, lastLapTime: 0, currentTrackPosition: 0, currentLap: 0 }
+    });
+
+    // Car telemetry state
+    const [carTelemetry, setCarTelemetry] = useState<Record<number, CarTelemetry>>({
+        0: { tireWearPercentage: 0, performanceDropSeconds: 0, lapsSincePit: 0, lastPitLap: 0, baseSpeed: carSpeed, currentSpeed: carSpeed, raceIncident: "None" },
+        1: { tireWearPercentage: 0, performanceDropSeconds: 0, lapsSincePit: 0, lastPitLap: 0, baseSpeed: carSpeed, currentSpeed: carSpeed, raceIncident: "None" },
+        2: { tireWearPercentage: 0, performanceDropSeconds: 0, lapsSincePit: 0, lastPitLap: 0, baseSpeed: carSpeed, currentSpeed: carSpeed, raceIncident: "None" },
+        3: { tireWearPercentage: 0, performanceDropSeconds: 0, lapsSincePit: 0, lastPitLap: 0, baseSpeed: carSpeed, currentSpeed: carSpeed, raceIncident: "None" }
     });
     const [raceStartTime, setRaceStartTime] = useState<number | null>(null);
     const sliderId = useId();
@@ -265,16 +291,86 @@ export default function F1RaceSimulation({ className = '' }: F1RaceSimulationPro
     const trailWidthId = useId();
     const pitStopPositionId = useId();
 
+    // Update car telemetry (tire wear, performance degradation)
+    const updateCarTelemetry = useCallback((carId: number, delta: number) => {
+        setCarTelemetry(prev => {
+            const updated = { ...prev };
+            const telemetry = updated[carId];
+            
+            if (!telemetry) return updated;
+
+            // Calculate tire wear: linear increase + random variation
+            const baseWearRate = 0.05; // 0.05% per second
+            const randomVariation = (Math.random() - 0.5) * 0.04; // ±0.02% variation
+            const wearIncrease = (baseWearRate + randomVariation) * delta;
+            
+            telemetry.tireWearPercentage = Math.min(100, telemetry.tireWearPercentage + wearIncrease);
+            
+            // Calculate performance drop based on tire wear
+            const performanceDropRate = 0.001; // 0.001s per 1% tire wear
+            telemetry.performanceDropSeconds = telemetry.tireWearPercentage * performanceDropRate;
+            
+            // Update current speed based on performance drop
+            const speedReduction = telemetry.performanceDropSeconds / 100;
+            telemetry.currentSpeed = telemetry.baseSpeed * (1 - speedReduction);
+            
+            return updated;
+        });
+    }, []);
+
+    // Detect undercut/overcut opportunities
+    const detectUndercutOpportunity = useCallback((carId: number): number => {
+        if (!trackData) return 0;
+        
+        const currentCarData = carRaceData[carId];
+        const currentCarTelemetry = carTelemetry[carId];
+        
+        if (!currentCarData || !currentCarTelemetry) return 0;
+        
+        // Check if car is on a straight section
+        if (!isOnStraight(currentCarData.currentTrackPosition, trackData.curve)) {
+            return 0;
+        }
+        
+        const currentPosition = currentCarData.currentTrackPosition;
+        const currentTireWear = currentCarTelemetry.tireWearPercentage;
+        
+        // Find cars within ±0.05 track position (same lap)
+        const nearbyCars = Object.entries(carRaceData).filter(([id, data]) => {
+            const carIdNum = parseInt(id);
+            if (carIdNum === carId) return false; // Skip self
+            if (data.currentLap !== currentCarData.currentLap) return false; // Different lap
+            
+            const positionDiff = Math.abs(data.currentTrackPosition - currentPosition);
+            return positionDiff <= 0.05; // Within 5% of track
+        });
+        
+        // Check tire wear difference with nearby cars
+        for (const [id] of nearbyCars) {
+            const nearbyCarId = parseInt(id);
+            const nearbyCarTelemetry = carTelemetry[nearbyCarId];
+            
+            if (nearbyCarTelemetry) {
+                const tireWearDifference = Math.abs(currentTireWear - nearbyCarTelemetry.tireWearPercentage);
+                if (tireWearDifference > 20) { // 20% difference threshold
+                    return 1; // Opportunity exists
+                }
+            }
+        }
+        
+        return 0; // No opportunity
+    }, [trackData, carRaceData, carTelemetry]);
+
     // Handle real-time position updates
     const handlePositionUpdate = useCallback((carId: number, trackPosition: number, currentLap: number) => {
         setCarRaceData(prev => {
             const updated = { ...prev };
             const carData = updated[carId];
-            
+
             // Update real-time position data
             carData.currentTrackPosition = trackPosition;
             carData.currentLap = currentLap;
-            
+
             return updated;
         });
     }, []);
@@ -284,18 +380,28 @@ export default function F1RaceSimulation({ className = '' }: F1RaceSimulationPro
         setCarRaceData(prev => {
             const updated = { ...prev };
             const carData = updated[carId];
-            
+
             // Store the actual crossing timestamp
             carData.laps = lapNumber;
             carData.lapTimes.push(lapTime); // Store timestamp of lap completion
             carData.lastLapTime = lapTime; // Store timestamp of last lap completion
-            
+
             // Check if race is finished (16 laps)
             if (lapNumber >= 16) {
                 carData.isFinished = true;
                 console.log(`Car ${carId} finished the race!`);
             }
-            
+
+            return updated;
+        });
+
+        // Update telemetry - increment laps since pit
+        setCarTelemetry(prev => {
+            const updated = { ...prev };
+            const telemetry = updated[carId];
+            if (telemetry) {
+                telemetry.lapsSincePit += 1;
+            }
             return updated;
         });
     }, []);
@@ -337,6 +443,21 @@ export default function F1RaceSimulation({ className = '' }: F1RaceSimulationPro
             ...prev,
             [carId]: false
         }));
+
+        // Reset telemetry after pit stop
+        setCarTelemetry(prev => {
+            const updated = { ...prev };
+            const telemetry = updated[carId];
+            if (telemetry) {
+                telemetry.tireWearPercentage = 0;
+                telemetry.performanceDropSeconds = 0;
+                telemetry.lapsSincePit = 0;
+                telemetry.lastPitLap = carRaceData[carId]?.currentLap || 0;
+                telemetry.currentSpeed = telemetry.baseSpeed;
+                telemetry.raceIncident = "None";
+            }
+            return updated;
+        });
     };
 
     // Handle manual pit stop toggle
@@ -367,6 +488,124 @@ export default function F1RaceSimulation({ className = '' }: F1RaceSimulationPro
 
         return () => clearInterval(interval);
     }, []);
+
+    // Update telemetry continuously during race
+    useEffect(() => {
+        if (!isRaceStarted) return;
+
+        const interval = setInterval(() => {
+            [0, 1, 2, 3].forEach(carId => {
+                updateCarTelemetry(carId, 1); // Update every second
+            });
+        }, 1000);
+
+        return () => clearInterval(interval);
+    }, [isRaceStarted, updateCarTelemetry]);
+
+    // Periodic API calls for pit stop decisions (every 3 seconds)
+    useEffect(() => {
+        if (!isRaceStarted || !trackData) return;
+        console.log("API call for pit stop decisions");
+
+        const interval = setInterval(async () => {
+            for (const carId of [0, 1, 2, 3]) {
+                // Get current values from state at the time of the call
+                const currentCarRaceData = carRaceData;
+                const currentCarTelemetry = carTelemetry;
+                const carData = currentCarRaceData[carId];
+                const carTelemetryData = currentCarTelemetry[carId];
+                
+                if (!carData || !carTelemetryData) continue;
+                
+                // Check if car is on a straight section
+                if (!isOnStraight(carData.currentTrackPosition, trackData.curve)) {
+                    continue;
+                }
+                
+                // Detect undercut opportunity with current data
+                const undercutOpportunity = (() => {
+                    const currentPosition = carData.currentTrackPosition;
+                    const currentTireWear = carTelemetryData.tireWearPercentage;
+                    
+                    // Find cars within ±0.05 track position (same lap)
+                    const nearbyCars = Object.entries(currentCarRaceData).filter(([id, data]) => {
+                        const carIdNum = parseInt(id);
+                        if (carIdNum === carId) return false; // Skip self
+                        if (data.currentLap !== carData.currentLap) return false; // Different lap
+                        
+                        const positionDiff = Math.abs(data.currentTrackPosition - currentPosition);
+                        return positionDiff <= 0.05; // Within 5% of track
+                    });
+                    
+                    // Check tire wear difference with nearby cars
+                    for (const [id] of nearbyCars) {
+                        const nearbyCarId = parseInt(id);
+                        const nearbyCarTelemetry = currentCarTelemetry[nearbyCarId];
+                        
+                        if (nearbyCarTelemetry) {
+                            const tireWearDifference = Math.abs(currentTireWear - nearbyCarTelemetry.tireWearPercentage);
+                            if (tireWearDifference > 20) { // 20% difference threshold
+                                return 1; // Opportunity exists
+                            }
+                        }
+                    }
+                    
+                    return 0; // No opportunity
+                })();
+                
+                // Calculate race position (1-4) based on current standings
+                const calculateRacePosition = (carId: number) => {
+                    const allCars = Object.entries(currentCarRaceData).map(([id, data]) => ({
+                        carId: parseInt(id),
+                        laps: data.laps,
+                        trackPosition: data.currentTrackPosition,
+                        isFinished: data.isFinished
+                    }));
+                    
+                    // Sort by laps (descending), then by track position (ascending for same lap)
+                    allCars.sort((a, b) => {
+                        if (a.laps !== b.laps) {
+                            return b.laps - a.laps; // More laps first
+                        }
+                        if (a.laps === 0) return 0; // Both haven't started
+                        // For same lap, sort by track position (higher position = further ahead)
+                        return b.trackPosition - a.trackPosition; // Higher track position first
+                    });
+                    
+                    // Find position of current car
+                    const position = allCars.findIndex(car => car.carId === carId) + 1;
+                    return position;
+                };
+                
+                // Prepare API request data
+                const requestData = {
+                    undercut_overcut_opportunity: undercutOpportunity,
+                    tire_wear_percentage: Math.round(carTelemetryData.tireWearPercentage),
+                    performance_drop_seconds: Math.round(carTelemetryData.performanceDropSeconds * 100) / 100,
+                    track_position: calculateRacePosition(carId),
+                    race_incident: carTelemetryData.raceIncident,
+                    laps_since_pit: carTelemetryData.lapsSincePit
+                };
+                
+                try {
+                    const response = await getPitStopDecision(requestData);
+                    console.log(`Car ${carId} pit stop decision:`, response);
+                    
+                    // If AI recommends pit stop, trigger it
+                    if (response.decision === "PIT NOW") {
+                        setPitStopToggles(prev => ({
+                            ...prev,
+                            [carId]: true
+                        }));
+                    }
+                } catch (error) {
+                    console.error(`Failed to get pit stop decision for car ${carId}:`, error);
+                }
+            }
+        }, 3000); // Every 3 seconds
+
+        return () => clearInterval(interval);
+    }, [isRaceStarted, trackData]); // Only depend on race start and track data
 
     useEffect(() => {
         loadTrackData()
@@ -415,14 +654,14 @@ export default function F1RaceSimulation({ className = '' }: F1RaceSimulationPro
     return (
         <div className={`w-full h-screen relative ${className}`}>
             {/* Scoreboard */}
-            <Scoreboard 
+            <Scoreboard
                 carRaceData={carRaceData}
                 drivers={DRIVERS}
                 raceStartTime={raceStartTime}
             />
-            
+
             {/* Car Controls */}
-            <div className="absolute top-4 left-4 z-10 bg-white/90 backdrop-blur-sm rounded-lg p-4 shadow-lg">
+            <div className="absolute top-4 left-4 z-10 bg-white/90 backdrop-blur-sm rounded-lg p-4 shadow-lg bottom-4 overflow-y-auto">
                 <div className="space-y-4">
                     {/* Race Start/Stop Control */}
                     <div className="space-y-2">
@@ -526,19 +765,49 @@ export default function F1RaceSimulation({ className = '' }: F1RaceSimulationPro
                         {[0, 1, 2, 3].map((carId) => {
                             const status = pitStopStatus[carId];
                             const toggleEnabled = pitStopToggles[carId] || false;
+                            const telemetry = carTelemetry[carId];
+                            const tireWearColor = telemetry?.tireWearPercentage < 50 ? 'text-green-600' : 
+                                                telemetry?.tireWearPercentage < 80 ? 'text-yellow-600' : 'text-red-600';
+                            
                             return (
-                                <div key={carId} className="flex items-center justify-between space-x-2">
-                                    <div className="text-xs flex-1">
-                                        Car {carId + 1}: {status?.isInPitStop ? 
-                                            `🛑 In Pit Stop (${status.timeRemaining}s)` : 
-                                            toggleEnabled ? '⏳ Needs Pit Stop' : '🏁 Racing'
-                                        }
+                                <div key={carId} className="space-y-1">
+                                    <div className="flex items-center justify-between space-x-2">
+                                        <div className="text-xs flex-1">
+                                            Car {carId + 1}: {status?.isInPitStop ?
+                                                `🛑 In Pit Stop (${status.timeRemaining}s)` :
+                                                toggleEnabled ? '⏳ Needs Pit Stop' : '🏁 Racing'
+                                            }
+                                        </div>
+                                        <Switch
+                                            checked={toggleEnabled}
+                                            onCheckedChange={(checked) => handlePitStopToggle(carId, checked)}
+                                            disabled={status?.isInPitStop}
+                                        />
                                     </div>
-                                    <Switch
-                                        checked={toggleEnabled}
-                                        onCheckedChange={(checked) => handlePitStopToggle(carId, checked)}
-                                        disabled={status?.isInPitStop}
-                                    />
+                                    
+                                    {/* Telemetry Display */}
+                                    {telemetry && (
+                                        <div className="text-xs text-gray-600 space-y-1 pl-2">
+                                            <div className="flex justify-between">
+                                                <span>Tire Wear:</span>
+                                                <span className={tireWearColor}>
+                                                    {telemetry.tireWearPercentage.toFixed(1)}%
+                                                </span>
+                                            </div>
+                                            <div className="flex justify-between">
+                                                <span>Performance Drop:</span>
+                                                <span>{telemetry.performanceDropSeconds.toFixed(2)}s</span>
+                                            </div>
+                                            <div className="flex justify-between">
+                                                <span>Laps Since Pit:</span>
+                                                <span>{telemetry.lapsSincePit}</span>
+                                            </div>
+                                            <div className="flex justify-between">
+                                                <span>Current Speed:</span>
+                                                <span>{((telemetry.currentSpeed / telemetry.baseSpeed) * 100).toFixed(1)}%</span>
+                                            </div>
+                                        </div>
+                                    )}
                                 </div>
                             );
                         })}
@@ -587,18 +856,22 @@ export default function F1RaceSimulation({ className = '' }: F1RaceSimulationPro
                                 </div>
 
                                 <div className="space-y-2">
-                                    <div className="text-sm font-medium text-gray-700">Trail Color:</div>
+                                    <div className="text-sm font-medium text-gray-700">Trail Colors:</div>
+                                    <div className="text-xs text-gray-600 mb-2">
+                                        Trails are now color-coded by team:
+                                    </div>
                                     <div className="flex gap-2">
-                                        {['#ff6b6b', '#4ecdc4', '#45b7d1', '#96ceb4', '#feca57', '#ff9ff3'].map((color) => (
-                                            <button
-                                                key={color}
-                                                type="button"
-                                                onClick={() => setTrailColor(color)}
-                                                className={`w-8 h-8 rounded-full border-2 ${trailColor === color ? 'border-gray-800' : 'border-gray-300'
-                                                    }`}
-                                                style={{ backgroundColor: color }}
-                                                aria-label={`Select trail color ${color}`}
-                                            />
+                                        {DRIVERS.map((driver, index) => (
+                                            <div key={driver.id} className="flex flex-col items-center">
+                                                <div
+                                                    className="w-6 h-6 rounded-full border-2 border-gray-300"
+                                                    style={{ backgroundColor: driver.color }}
+                                                    title={`Car ${index + 1}: ${driver.name} (${driver.team})`}
+                                                />
+                                                <div className="text-xs text-gray-500 mt-1">
+                                                    {index + 1}
+                                                </div>
+                                            </div>
                                         ))}
                                     </div>
                                 </div>
@@ -633,7 +906,6 @@ export default function F1RaceSimulation({ className = '' }: F1RaceSimulationPro
                         selectedCarId={selectedCarId}
                         setCarPosition={setCarPosition}
                         showTrail={showTrail}
-                        trailColor={trailColor}
                         trailLength={trailLength}
                         trailWidth={trailWidth}
                         pitStopPosition={pitStopPosition}
@@ -641,10 +913,10 @@ export default function F1RaceSimulation({ className = '' }: F1RaceSimulationPro
                         handlePitStopEnd={handlePitStopEnd}
                         pitStopToggles={pitStopToggles}
                         handlePitStopToggle={handlePitStopToggle}
-                        carOffsets={carOffsets}
                         isRaceStarted={isRaceStarted}
                         handleLapComplete={handleLapComplete}
                         handlePositionUpdate={handlePositionUpdate}
+                        carTelemetry={carTelemetry}
                     />
                 </Suspense>
             </Canvas>

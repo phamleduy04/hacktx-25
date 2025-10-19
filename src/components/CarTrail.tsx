@@ -4,7 +4,7 @@ import * as THREE from 'three';
 
 interface CarTrailProps {
     carPosition: THREE.Vector3;
-    carOffset?: number; // X offset for trail positioning
+    carRotation?: THREE.Quaternion;
     maxLength?: number;
     color?: string;
     width?: number;
@@ -14,7 +14,6 @@ interface CarTrailProps {
 
 export default function CarTrail({
     carPosition,
-    carOffset = 0,
     maxLength = 100,
     color = '#ff6b6b',
     width = 8,
@@ -54,13 +53,13 @@ export default function CarTrail({
     useFrame(() => {
         if (!trailRef.current || !lineRef.current) return;
 
-    // Add current position to trail
-    positionsRef.current.push(carPosition.clone());
-    
-    // Limit trail length
-    if (positionsRef.current.length > maxLength) {
-      positionsRef.current.shift();
-    }
+        // Add current position to trail
+        positionsRef.current.push(carPosition.clone());
+
+        // Limit trail length
+        if (positionsRef.current.length > maxLength) {
+            positionsRef.current.shift();
+        }
 
         // Update geometry with current positions
         if (positionsRef.current.length > 1) {
@@ -86,9 +85,7 @@ export default function CarTrail({
 
     return (
         <group ref={trailRef}>
-            <group position={[carOffset, 0, 0]}>
-                <primitive ref={lineRef} object={new THREE.Mesh(geometry, material)} />
-            </group>
+            <primitive ref={lineRef} object={new THREE.Mesh(geometry, material)} />
         </group>
     );
 }
