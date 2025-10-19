@@ -215,14 +215,14 @@ function Scene({ trackData, carScale, carSpeed, followCar, setCarPosition, showT
 
             {/* Animated F1 Cars */}
             {[
-                { id: 0, offset: 0.990 },
-                { id: 1, offset: 0.995 },
-                { id: 2, offset: 0 },
-                { id: 3, offset: 0.005 },
-                { id: 4, offset: 0.010 },
-                { id: 5, offset: 0.015 },
-                { id: 6, offset: 0.020 },
-                { id: 7, offset: 0.025 }
+                { id: 0, offset: 0.930 },
+                { id: 1, offset: 0.935 },
+                { id: 2, offset: 0.940 },
+                { id: 3, offset: 0.945 },
+                { id: 4, offset: 0.950 },
+                { id: 5, offset: 0.955 },
+                { id: 6, offset: 0.960 },
+                { id: 7, offset: 0.965 }
             ].map((car, index) => (
                 <AnimatedF1Car
                     primary={index === 0}
@@ -811,6 +811,11 @@ export default function F1RaceSimulation({ className = '' }: F1RaceSimulationPro
                                     onClick={() => setSelectedCarId(id)}
                                     variant={selectedCarId === id ? "default" : "outline"}
                                     className="w-12"
+                                    style={{
+                                        backgroundColor: selectedCarId === id ? DRIVERS[id]?.color : undefined,
+                                        borderColor: DRIVERS[id]?.color,
+                                        color: selectedCarId === id ? 'white' : DRIVERS[id]?.color
+                                    }}
                                 >
                                     {id + 1}
                                 </Button>
