@@ -36,7 +36,7 @@ export default function Scoreboard({ carRaceData, drivers, raceStartTime }: Scor
   // Track previous positions to detect changes
   const previousPositionsRef = useRef<Record<number, number>>({});
   const [positionChanges, setPositionChanges] = useState<Record<number, 'up' | 'down' | null>>({});
-  const [animatingCars, setAnimatingCars] = useState<Set<number>>(new Set());
+  // const [animatingCars, setAnimatingCars] = useState<Set<number>>(new Set());
   // Calculate positions and time gaps
   const calculatePositions = (): CarPosition[] => {
     const cars: CarPosition[] = [];
@@ -132,7 +132,7 @@ export default function Scoreboard({ carRaceData, drivers, raceStartTime }: Scor
 
     if (Object.keys(pending).length > 0) {
       setPositionChanges((old) => ({ ...old, ...pending }));
-      setAnimatingCars(newAnimatingCars);
+      // setAnimatingCars(newAnimatingCars);
       
       const timeout = setTimeout(() => {
         setPositionChanges((old) => {
@@ -142,7 +142,7 @@ export default function Scoreboard({ carRaceData, drivers, raceStartTime }: Scor
           });
           return cleared;
         });
-        setAnimatingCars(new Set());
+        // setAnimatingCars(new Set());
       }, 1200);
       return () => clearTimeout(timeout);
     }
